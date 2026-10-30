@@ -1,5 +1,6 @@
 package br.com.helpcsistemas.customeraccount.verification.adapter.out.provider;
 
+import br.com.helpcsistemas.customeraccount.verification.application.port.out.HostedSession;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.ProviderDescriptor;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.ProviderRequest;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.ProviderUnavailableException;
@@ -15,6 +16,7 @@ import io.github.resilience4j.retry.RetryRegistry;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 import java.net.SocketTimeoutException;
+import java.net.URI;
 import java.net.http.HttpTimeoutException;
 import java.util.Comparator;
 import java.util.List;
@@ -72,6 +74,20 @@ class ResilientProviderGateway implements VerificationProviderGateway {
         return execute("verification.provider.confirm", providerId, request, call);
     }
 
+    @Override
+    public HostedSession startHosted(ProviderId providerId, ProviderRequest request, URI returnUrl) {
+        var provider = resolve(providerId, request);
+        if (!(provider instanceof HostedVerificationProvider hosted)) {
+            throw new ProviderUnavailableException("PROVIDER_NOT_AVAILABLE", 0, null);
+        }
+        var name = "provider-" + providerId.value();
+        var circuitBreaker = circuitBreakers.circuitBreaker(name, RESILIENCE_CONFIG);
+        var retry = retries.retry(name, RESILIENCE_CONFIG);
+        var call = Retry.decorateSupplier(
+                retry, CircuitBreaker.decorateSupplier(circuitBreaker, () -> hosted.start(request, returnUrl)));
+        return executeHosted("verification.provider.hosted.start", providerId, request, call);
+    }
+
     private VerificationProvider resolve(ProviderId providerId, ProviderRequest request) {
         var provider = providers.get(providerId);
         if (provider == null || !provider.supportedTypes().contains(request.type())) {
@@ -89,6 +105,21 @@ class ResilientProviderGateway implements VerificationProviderGateway {
                     .lowCardinalityKeyValue("verification.type", request.type().name())
                     .observe(call::get);
             return result.withLatency(elapsedMs(start));
+        } catch (CallNotPermittedException ex) {
+            throw new ProviderUnavailableException("CIRCUIT_OPEN", elapsedMs(start), ex);
+        } catch (RuntimeException ex) {
+            throw new ProviderUnavailableException(errorCode(ex), elapsedMs(start), ex);
+        }
+    }
+
+    private HostedSession executeHosted(
+            String observationName, ProviderId providerId, ProviderRequest request, Supplier<HostedSession> call) {
+        long start = System.nanoTime();
+        try {
+            return Observation.createNotStarted(observationName, observations)
+                    .lowCardinalityKeyValue("provider", providerId.value())
+                    .lowCardinalityKeyValue("verification.type", request.type().name())
+                    .observe(call::get);
         } catch (CallNotPermittedException ex) {
             throw new ProviderUnavailableException("CIRCUIT_OPEN", elapsedMs(start), ex);
         } catch (RuntimeException ex) {

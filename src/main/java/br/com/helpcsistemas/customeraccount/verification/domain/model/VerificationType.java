@@ -14,5 +14,7 @@ public enum VerificationType {
     /** Posse do celular (código por SMS confirmado pelo titular). */
     MOBILE_PHONE_OWNERSHIP,
     /** Risco da linha (tipo de linha, troca recente de SIM). */
-    MOBILE_PHONE_RISK
+    MOBILE_PHONE_RISK,
+    /** Verificação hospedada de identidade, documento e biometria no provedor. */
+    IDENTITY
 }

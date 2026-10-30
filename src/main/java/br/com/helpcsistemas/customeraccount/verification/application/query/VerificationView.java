@@ -36,6 +36,11 @@ public record VerificationView(
         int challengeAttempts,
         Instant deliveredAt,
         boolean deliveryFailed,
+        String hostedLink,
+        Instant hostedLinkExpiresAt,
+        Instant validUntil,
+        boolean validityExpired,
+        boolean reused,
         long version) {
 
     public VerificationView {
@@ -64,6 +69,40 @@ public record VerificationView(
                 process.challengeAttempts(),
                 process.deliveredAt(),
                 process.deliveryFailed(),
+                process.status() == VerificationStatus.AWAITING_HOLDER ? process.hostedLink() : null,
+                process.hostedLinkExpiresAt(),
+                process.validUntil(),
+                process.isValidityExpired(),
+                false,
                 process.version());
+    }
+
+    public VerificationView asReused() {
+        return new VerificationView(
+                id,
+                tenantId,
+                customerId,
+                type,
+                status,
+                outcome,
+                provider,
+                score,
+                reasonCodes,
+                providerTransactionId,
+                policyVersion,
+                failedOver,
+                failures,
+                requestedAt,
+                concludedAt,
+                challengeExpiresAt,
+                challengeAttempts,
+                deliveredAt,
+                deliveryFailed,
+                hostedLink,
+                hostedLinkExpiresAt,
+                validUntil,
+                validityExpired,
+                true,
+                version);
     }
 }

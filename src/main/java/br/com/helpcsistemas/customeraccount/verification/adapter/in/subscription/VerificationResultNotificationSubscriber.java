@@ -32,6 +32,8 @@ class VerificationResultNotificationSubscriber implements EventStreamSubscriber 
     public void onEvent(StoredEvent event) {
         if (codec.isConclusion(event)) {
             lifecycle.notifyResult(codec.verificationIdOf(event));
+        } else if (codec.isValidityExpired(event)) {
+            lifecycle.notifyValidityExpired(codec.verificationIdOf(event));
         }
     }
 }

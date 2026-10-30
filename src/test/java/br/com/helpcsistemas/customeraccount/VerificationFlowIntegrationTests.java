@@ -10,9 +10,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import br.com.helpcsistemas.customeraccount.verification.adapter.out.provider.hosted.SimulatedHostedProvider;
 import com.jayway.jsonpath.JsonPath;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -26,6 +32,119 @@ class VerificationFlowIntegrationTests extends IntegrationTestSupport {
 
     private static final String TENANT_A = "tenant-app-a";
     private static final String TENANT_B = "tenant-app-b";
+    private static final String TENANT_HOSTED = "tenant-app-hosted";
+
+    @Autowired
+    private SimulatedHostedProvider simulatedHostedProvider;
+
+    @Test
+    void hostedIdentityReturnsReusableLinkAndProcessesSignedCallback() throws Exception {
+        configure(TENANT_HOSTED, "IDENTITY", "simulated-hosted", null, "Fluxo hospedado")
+                .andExpect(status().isOk());
+        var customerId = register(tenant(TENANT_HOSTED, "customer:write"), "12345678909");
+
+        var initial = verify(TENANT_HOSTED, customerId, "IDENTITY")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("AWAITING_HOLDER"))
+                .andExpect(jsonPath("$.link.url").isString())
+                .andExpect(jsonPath("$.link.expiresAt").exists())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String verificationId = JsonPath.read(initial, "$.id");
+        String link = JsonPath.read(initial, "$.link.url");
+        String sessionId = link.substring(link.lastIndexOf('/') + 1);
+
+        verify(TENANT_HOSTED, customerId, "IDENTITY")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(verificationId))
+                .andExpect(jsonPath("$.reused").value(true));
+        mvc.perform(get("/dev/hosted-verification/{id}", sessionId))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(org.hamcrest.Matchers.containsString("FRAUD_DETECTED")));
+
+        String timestamp = Long.toString(Instant.now().getEpochSecond());
+        String body = """
+                {"eventId":"callback-%s","sessionId":"%s","status":"COMPLETED","score":94,"reasonCodes":[],"fraudSignals":[],"occurredAt":"%s"}
+                """.formatted(UUID.randomUUID(), sessionId, Instant.now());
+        mvc.perform(post("/api/v1/provider-callbacks/simulated-hosted")
+                        .header("X-Timestamp", timestamp)
+                        .header("X-Signature", "v1=invalid")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnauthorized());
+        var signature = simulatedHostedProvider.signature(timestamp, body);
+        mvc.perform(post("/api/v1/provider-callbacks/simulated-hosted")
+                        .header("X-Timestamp", timestamp)
+                        .header("X-Signature", signature)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isAccepted());
+        mvc.perform(post("/api/v1/provider-callbacks/simulated-hosted")
+                        .header("X-Timestamp", timestamp)
+                        .header("X-Signature", signature)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isAccepted());
+
+        await().atMost(EVENTUAL)
+                .untilAsserted(() -> mvc.perform(get("/api/v1/verifications/{id}", verificationId)
+                                .with(tenant(TENANT_HOSTED, "verification:read")))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.status").value("COMPLETED"))
+                        .andExpect(jsonPath("$.outcome").value("APPROVED"))
+                        .andExpect(jsonPath("$.validUntil").exists())
+                        .andExpect(jsonPath("$.link").doesNotExist()));
+        mvc.perform(get("/api/v1/customers/{id}/verification-status", customerId)
+                        .queryParam("type", "IDENTITY")
+                        .with(tenant(TENANT_HOSTED, "verification:read")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VALID"))
+                .andExpect(jsonPath("$.verificationId").value(verificationId));
+        assertThat(eventStore.readStream("verification-" + verificationId).stream()
+                        .filter(event -> event.type().equals("ProviderResultReceived.v1"))
+                        .count())
+                .isEqualTo(1);
+
+        var revalidation = verify(TENANT_HOSTED, customerId, "IDENTITY")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.reused").value(false))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String secondId = JsonPath.read(revalidation, "$.id");
+        String secondSession = ((String) JsonPath.read(revalidation, "$.link.url"))
+                .substring(((String) JsonPath.read(revalidation, "$.link.url")).lastIndexOf('/') + 1);
+        String fraudTimestamp = Long.toString(Instant.now().getEpochSecond());
+        String fraudBody = """
+                {"eventId":"callback-fraud-%s","sessionId":"%s","status":"FRAUD_DETECTED","fraudSignals":["SIMULATED_FRAUD"],"occurredAt":"%s"}
+                """.formatted(UUID.randomUUID(), secondSession, Instant.now());
+        mvc.perform(post("/api/v1/provider-callbacks/simulated-hosted")
+                        .header("X-Timestamp", fraudTimestamp)
+                        .header("X-Signature", simulatedHostedProvider.signature(fraudTimestamp, fraudBody))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(fraudBody))
+                .andExpect(status().isAccepted());
+        await().atMost(EVENTUAL)
+                .untilAsserted(() -> mvc.perform(get("/api/v1/verifications/{id}", secondId)
+                                .with(tenant(TENANT_HOSTED, "verification:read")))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.outcome").value("FRAUD_SUSPECTED")));
+        mvc.perform(get("/api/v1/customers/{id}/verification-status", customerId)
+                        .queryParam("type", "IDENTITY")
+                        .with(tenant(TENANT_HOSTED, "verification:read")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("NOT_APPROVED"));
+
+        mvc.perform(delete("/api/v1/customers/{id}", customerId).with(tenant(TENANT_HOSTED, "customer:erase")))
+                .andExpect(status().isAccepted());
+        await().atMost(EVENTUAL)
+                .untilAsserted(() -> assertThat(mongo.count(
+                                Query.query(Criteria.where("customerId").is(customerId.toString())),
+                                "verification_session_index"))
+                        .isZero());
+    }
 
     @Test
     void tenantProviderChoiceWithAutomaticFailoverAndAuditedChanges() throws Exception {

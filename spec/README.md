@@ -10,19 +10,20 @@ lendo apenas [00-contexto-atual.md](00-contexto-atual.md) + o arquivo da fase.
 | 1 – Cadastro ES/CQRS, privacidade, Keycloak, OTel, compose | ✅ concluída |
 | 2a – Política de provedores por tenant, processo de validação, contingência | ✅ concluída |
 | 2b – Segredos (Vault KV), OTP próprio, Twilio, ZeroBounce, webhook assinado ao tenant | ✅ concluída |
+| 3a – Base genérica de validação hospedada | ✅ implementada e testada; adapter real depende dos contratos da Legitimuz/Netrin |
 
 ## Pendentes
 
 | Spec | Fase | Depende de | Resumo |
 |---|---|---|---|
-| [fase-3a-validacao-hospedada.md](fase-3a-validacao-hospedada.md) | 3a | — | Link de validação (Legitimuz/Netrin genéricos), webhook de entrada, regras de resultado, validade/revalidação |
 | [fase-3b-canal-tempo-real.md](fase-3b-canal-tempo-real.md) | 3b | 3a | Token de canal para o front, polling público e push em tempo real (SignalR/SSE) |
 | [fase-4a-autenticacao-titular-admin.md](fase-4a-autenticacao-titular-admin.md) | 4a | — | Passwordless + 2FA do titular, MFA/step-up dos admins de tenant no Keycloak |
 | [fase-4b-consentimento.md](fase-4b-consentimento.md) | 4b | — (usa 3a opcionalmente) | Módulo `consent`, vínculo de cliente a novo tenant com consentimento, minimização por escopo |
 | [fase-5-integracao-kafka-portal.md](fase-5-integracao-kafka-portal.md) | 5 | — | Kafka no compose, publicação de eventos para tenants, portal do titular (art. 18) |
 | [fase-t-transversal.md](fase-t-transversal.md) | T | — | Idempotência, rate limit, DLQ, snapshots, upcasters, rotação de KEK, auditoria imutável |
 
-Ordem sugerida: **3a → 3b → 4a → 4b → 5**, com itens de **T** intercalados conforme necessidade.
+Ordem sugerida: **3b → 4a → 4b → 5**, com itens de **T** intercalados conforme necessidade. A spec da 3a permanece
+como contrato para quando chegarem os detalhes de integração real.
 
 ## Decisões registradas (2026-10-30)
 

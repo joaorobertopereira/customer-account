@@ -1,6 +1,7 @@
 package br.com.helpcsistemas.customeraccount.verification;
 
 import br.com.helpcsistemas.customeraccount.shared.domain.TenantId;
+import br.com.helpcsistemas.customeraccount.verification.domain.model.HostedResultRules;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.InconclusiveAction;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.ProviderDecision;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.ProviderId;
@@ -34,5 +35,23 @@ public final class VerificationFixtures {
     public static VerificationRule otpRule(ProviderId primary, ProviderId fallback) {
         return new VerificationRule(
                 VerificationType.EMAIL_OWNERSHIP, primary, fallback, null, InconclusiveAction.REJECT, true);
+    }
+
+    public static VerificationRule identityRule(ProviderId primary, ProviderId fallback) {
+        return new VerificationRule(
+                VerificationType.IDENTITY,
+                primary,
+                fallback,
+                70,
+                InconclusiveAction.MANUAL_REVIEW,
+                true,
+                new HostedResultRules(
+                        70,
+                        HostedResultRules.Action.MANUAL_REVIEW,
+                        List.of("DOCUMENT_TAMPERED"),
+                        List.of("NEEDS_REVIEW"),
+                        HostedResultRules.Action.ERROR,
+                        90,
+                        List.of("https://front.example/app")));
     }
 }

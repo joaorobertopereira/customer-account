@@ -4,6 +4,7 @@ import static br.com.helpcsistemas.customeraccount.verification.VerificationFixt
 import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.FALLBACK;
 import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.PRIMARY;
 import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.TENANT;
+import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.identityRule;
 import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.otpRule;
 import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.result;
 import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.rule;
@@ -14,6 +15,7 @@ import br.com.helpcsistemas.customeraccount.shared.domain.BusinessRuleException;
 import br.com.helpcsistemas.customeraccount.shared.domain.InvalidValueException;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.ChallengeAnswerRejected;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.ChallengeIssued;
+import br.com.helpcsistemas.customeraccount.verification.domain.event.LateProviderResultIgnored;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.ProviderCallFailed;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.ProviderFailedOver;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.ProviderResponseReceived;
@@ -22,6 +24,8 @@ import br.com.helpcsistemas.customeraccount.verification.domain.event.Verificati
 import br.com.helpcsistemas.customeraccount.verification.domain.event.VerificationResultDelivered;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.VerificationSubmittedToProvider;
 import java.time.Clock;
+import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -222,5 +226,117 @@ class VerificationProcessTest {
         assertThat(restored.status()).isEqualTo(VerificationStatus.AWAITING_CONFIRMATION);
         assertThat(restored.challengeAttempts()).isEqualTo(1);
         assertThat(restored.challengeExpiresAt()).isEqualTo(process.challengeExpiresAt());
+    }
+
+    @Test
+    void hostedLinkWaitsForCallbackAndClassifiesResultWithFrozenRules() {
+        var process = start(identityRule(PRIMARY, FALLBACK));
+        process.issueHostedLink(
+                "session-1",
+                "https://provider.example/session-1",
+                CLOCK.instant().plus(Duration.ofHours(1)),
+                List.of("cpf", "fullName"),
+                CLOCK);
+
+        assertThat(process.status()).isEqualTo(VerificationStatus.AWAITING_HOLDER);
+        assertThat(process.hostedLink()).isEqualTo("https://provider.example/session-1");
+        assertThat(process.sharedFields()).containsExactly("cpf", "fullName");
+
+        process.receiveHostedResult(
+                new HostedResult(
+                        "session-1",
+                        HostedResultStatus.COMPLETED,
+                        92,
+                        List.of(),
+                        List.of(),
+                        "event-1",
+                        CLOCK.instant(),
+                        "raw"),
+                CLOCK);
+
+        assertThat(process.status()).isEqualTo(VerificationStatus.COMPLETED);
+        assertThat(process.outcome()).isEqualTo(VerificationOutcome.APPROVED);
+        assertThat(process.validUntil()).isEqualTo(CLOCK.instant().plus(Duration.ofDays(90)));
+    }
+
+    @Test
+    void hostedFraudSignalOverridesHighScore() {
+        var process = start(identityRule(PRIMARY, null));
+        process.issueHostedLink(
+                "session-1",
+                "https://provider.example/session-1",
+                CLOCK.instant().plusSeconds(3600),
+                List.of(),
+                CLOCK);
+        process.receiveHostedResult(
+                new HostedResult(
+                        "session-1",
+                        HostedResultStatus.COMPLETED,
+                        99,
+                        List.of(),
+                        List.of("DOCUMENT_TAMPERED"),
+                        "event-1",
+                        CLOCK.instant(),
+                        "raw"),
+                CLOCK);
+
+        assertThat(process.outcome()).isEqualTo(VerificationOutcome.FRAUD_SUSPECTED);
+        assertThat(process.validUntil()).isNull();
+    }
+
+    @Test
+    void hostedLinkExpiresAfterGraceAndCallbackAfterConclusionIsRecordedAsLate() {
+        var process = start(identityRule(PRIMARY, null));
+        process.issueHostedLink(
+                "session-1",
+                "https://provider.example/session-1",
+                CLOCK.instant().plusSeconds(60),
+                List.of(),
+                CLOCK);
+        var afterGrace = Clock.offset(CLOCK, Duration.ofMinutes(16));
+
+        assertThat(process.expireIfDue(afterGrace)).isTrue();
+        assertThat(process.outcome()).isEqualTo(VerificationOutcome.EXPIRED);
+        process.receiveHostedResult(
+                new HostedResult(
+                        "session-1",
+                        HostedResultStatus.COMPLETED,
+                        99,
+                        List.of(),
+                        List.of(),
+                        "event-late",
+                        afterGrace.instant(),
+                        "raw"),
+                afterGrace);
+
+        assertThat(process.outcome()).isEqualTo(VerificationOutcome.EXPIRED);
+        assertThat(process.pendingEvents()).hasAtLeastOneElementOfType(LateProviderResultIgnored.class);
+    }
+
+    @Test
+    void validityExpirationIsRecordedOnce() {
+        var process = start(identityRule(PRIMARY, null));
+        process.issueHostedLink(
+                "session-1",
+                "https://provider.example/session-1",
+                CLOCK.instant().plusSeconds(3600),
+                List.of(),
+                CLOCK);
+        process.receiveHostedResult(
+                new HostedResult(
+                        "session-1",
+                        HostedResultStatus.COMPLETED,
+                        99,
+                        List.of(),
+                        List.of(),
+                        "event-1",
+                        CLOCK.instant(),
+                        "raw"),
+                CLOCK);
+        var afterValidity = Clock.offset(CLOCK, Duration.ofDays(91));
+
+        assertThat(process.validityExpired(afterValidity)).isTrue();
+        assertThat(process.validityExpired(afterValidity)).isFalse();
+        assertThat(process.isValidityExpired()).isTrue();
     }
 }

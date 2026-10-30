@@ -3,6 +3,7 @@ package br.com.helpcsistemas.customeraccount.verification.application.port.out;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.ProviderId;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.ProviderResult;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationType;
+import java.net.URI;
 import java.util.List;
 
 /** Acesso aos provedores externos. A escolha do provedor é sempre do chamador (política do tenant). */
@@ -17,6 +18,10 @@ public interface VerificationProviderGateway {
      * @throws ProviderUnavailableException falha técnica (não há contingência: o desafio pertence a este provedor)
      */
     ProviderResult confirm(ProviderId provider, ProviderRequest request, String transactionId, String answer);
+
+    default HostedSession startHosted(ProviderId provider, ProviderRequest request, URI returnUrl) {
+        throw new ProviderUnavailableException("PROVIDER_NOT_AVAILABLE", 0, null);
+    }
 
     boolean supports(ProviderId provider, VerificationType type);
 

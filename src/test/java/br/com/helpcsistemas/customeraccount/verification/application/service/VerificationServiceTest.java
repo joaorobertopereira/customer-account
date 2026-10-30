@@ -4,6 +4,7 @@ import static br.com.helpcsistemas.customeraccount.verification.VerificationFixt
 import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.FALLBACK;
 import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.PRIMARY;
 import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.TENANT;
+import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.identityRule;
 import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.otpRule;
 import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.result;
 import static br.com.helpcsistemas.customeraccount.verification.VerificationFixtures.rule;
@@ -14,6 +15,9 @@ import br.com.helpcsistemas.customeraccount.shared.domain.BusinessRuleException;
 import br.com.helpcsistemas.customeraccount.shared.domain.InvalidValueException;
 import br.com.helpcsistemas.customeraccount.shared.domain.ResourceNotFoundException;
 import br.com.helpcsistemas.customeraccount.shared.domain.TenantId;
+import br.com.helpcsistemas.customeraccount.verification.application.port.out.HostedSession;
+import br.com.helpcsistemas.customeraccount.verification.application.port.out.HostedSessionRegistryPort;
+import br.com.helpcsistemas.customeraccount.verification.application.port.out.HostedSessionRegistryPort.HostedSessionReference;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.ProviderDescriptor;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.ProviderRequest;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.ProviderUnavailableException;
@@ -34,6 +38,8 @@ import br.com.helpcsistemas.customeraccount.verification.domain.model.Verificati
 import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationProcess;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationStatus;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationType;
+import java.net.URI;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -156,6 +162,91 @@ class VerificationServiceTest {
         assertThat(stored.failures()).extracting(f -> f.errorCode()).containsExactly("TIMEOUT");
     }
 
+    @Test
+    void createsHostedLinkAndReusesActiveSession() {
+        var sessions = new InMemoryHostedSessions();
+        var hostedService = new VerificationService(
+                policies,
+                processes,
+                (tenant, id) -> Optional.of(new VerificationSubject(
+                        id, "52998224725", "Maria Souza", LocalDate.of(1990, 1, 1), "m@x.com", "+5511912345678")),
+                gateway,
+                CLOCK,
+                sessions);
+        gateway.hostedSession = new HostedSession(
+                "session-1",
+                "https://provider.example/session-1",
+                CLOCK.instant().plusSeconds(3600),
+                List.of("cpf"));
+        new VerificationPolicyService(policies, gateway, CLOCK)
+                .configure(TENANT, identityRule(PRIMARY, FALLBACK), "admin", "initial");
+
+        var created = hostedService.request(
+                TENANT, customerId, VerificationType.IDENTITY, "bff", URI.create("https://front.example/app/done"));
+        var reused = hostedService.request(TENANT, customerId, VerificationType.IDENTITY, "bff", null);
+
+        assertThat(created.status()).isEqualTo(VerificationStatus.AWAITING_HOLDER);
+        assertThat(created.hostedLink()).isEqualTo("https://provider.example/session-1");
+        assertThat(created.reused()).isFalse();
+        assertThat(reused.id()).isEqualTo(created.id());
+        assertThat(reused.reused()).isTrue();
+        assertThat(gateway.hostedCalls).containsExactly(PRIMARY);
+    }
+
+    @Test
+    void hostedLinkCreationFailsOverAndRecordsTheFailure() {
+        var sessions = new InMemoryHostedSessions();
+        var hostedService = new VerificationService(
+                policies,
+                processes,
+                (tenant, id) -> Optional.of(new VerificationSubject(
+                        id, "52998224725", "Maria Souza", LocalDate.of(1990, 1, 1), "m@x.com", "+5511912345678")),
+                gateway,
+                CLOCK,
+                sessions);
+        gateway.fail(PRIMARY, "TIMEOUT");
+        gateway.hostedSession = new HostedSession(
+                "session-fallback",
+                "https://provider.example/fallback",
+                CLOCK.instant().plusSeconds(3600),
+                List.of("cpf"));
+        new VerificationPolicyService(policies, gateway, CLOCK)
+                .configure(TENANT, identityRule(PRIMARY, FALLBACK), "admin", "initial");
+
+        var view = hostedService.request(TENANT, customerId, VerificationType.IDENTITY, "bff");
+
+        assertThat(view.provider()).isEqualTo(FALLBACK);
+        assertThat(view.failedOver()).isTrue();
+        assertThat(view.failures()).extracting(f -> f.errorCode()).containsExactly("TIMEOUT");
+        assertThat(gateway.hostedCalls).containsExactly(PRIMARY, FALLBACK);
+    }
+
+    @Test
+    void rejectsReturnUrlOutsideTenantAllowlistBeforeCallingProvider() {
+        var sessions = new InMemoryHostedSessions();
+        var hostedService = new VerificationService(
+                policies,
+                processes,
+                (tenant, id) -> Optional.of(new VerificationSubject(
+                        id, "52998224725", "Maria Souza", LocalDate.of(1990, 1, 1), "m@x.com", "+5511912345678")),
+                gateway,
+                CLOCK,
+                sessions);
+        new VerificationPolicyService(policies, gateway, CLOCK)
+                .configure(TENANT, identityRule(PRIMARY, null), "admin", "initial");
+
+        assertThatThrownBy(() -> hostedService.request(
+                        TENANT,
+                        customerId,
+                        VerificationType.IDENTITY,
+                        "bff",
+                        URI.create("https://attacker.example/done")))
+                .isInstanceOf(BusinessRuleException.class)
+                .extracting("code")
+                .isEqualTo("RETURN_URL_NOT_ALLOWED");
+        assertThat(gateway.hostedCalls).isEmpty();
+    }
+
     static final class InMemoryPolicies implements VerificationPolicyRepositoryPort {
 
         private final Map<TenantId, List<VerificationPolicyEvent>> streams = new HashMap<>();
@@ -210,6 +301,12 @@ class VerificationServiceTest {
         final List<ProviderId> calls = new ArrayList<>();
         String expectedAnswer = "123456";
         boolean confirmUnavailable;
+        HostedSession hostedSession = new HostedSession(
+                "session-default",
+                "https://provider.example/default",
+                CLOCK.instant().plusSeconds(3600),
+                List.of());
+        final List<ProviderId> hostedCalls = new ArrayList<>();
 
         void respond(ProviderId provider, ProviderResult result) {
             results.put(provider, result);
@@ -238,8 +335,17 @@ class VerificationServiceTest {
         }
 
         @Override
+        public HostedSession startHosted(ProviderId provider, ProviderRequest request, URI returnUrl) {
+            hostedCalls.add(provider);
+            if (failures.containsKey(provider)) {
+                throw new ProviderUnavailableException(failures.get(provider), 5, null);
+            }
+            return hostedSession;
+        }
+
+        @Override
         public boolean supports(ProviderId provider, VerificationType type) {
-            return results.containsKey(provider) || failures.containsKey(provider);
+            return results.containsKey(provider) || failures.containsKey(provider) || type == VerificationType.IDENTITY;
         }
 
         @Override
@@ -248,6 +354,65 @@ class VerificationServiceTest {
             return results.keySet().stream()
                     .map(id -> new ProviderDescriptor(id, all))
                     .toList();
+        }
+    }
+
+    static final class InMemoryHostedSessions implements HostedSessionRegistryPort {
+
+        private final Map<String, HostedSessionReference> active = new HashMap<>();
+        private final Map<String, HostedSessionReference> bySession = new HashMap<>();
+
+        private String key(TenantId tenant, UUID customer, VerificationType type) {
+            return tenant + ":" + customer + ":" + type;
+        }
+
+        @Override
+        public Optional<HostedSessionReference> findActive(
+                TenantId tenant, UUID customerId, VerificationType type, Instant now) {
+            return Optional.ofNullable(active.get(key(tenant, customerId, type)))
+                    .filter(ref -> ref.expiresAt().isAfter(now));
+        }
+
+        @Override
+        public boolean claim(
+                TenantId tenant,
+                UUID customerId,
+                VerificationType type,
+                VerificationId verificationId,
+                Instant leaseUntil,
+                Instant now) {
+            var key = key(tenant, customerId, type);
+            if (findActive(tenant, customerId, type, now).isPresent()) {
+                return false;
+            }
+            active.put(
+                    key,
+                    new HostedSessionReference(
+                            tenant, customerId, type, verificationId, null, null, leaseUntil, false));
+            return true;
+        }
+
+        @Override
+        public void activate(HostedSessionReference session) {
+            active.put(key(session.tenant(), session.customerId(), session.type()), session);
+            bySession.put(session.provider() + ":" + session.sessionId(), session);
+        }
+
+        @Override
+        public Optional<HostedSessionReference> findByProviderSession(ProviderId provider, String sessionId) {
+            return Optional.ofNullable(bySession.get(provider + ":" + sessionId));
+        }
+
+        @Override
+        public void release(VerificationId verificationId) {
+            active.values().removeIf(ref -> ref.verificationId().equals(verificationId));
+            bySession.values().removeIf(ref -> ref.verificationId().equals(verificationId));
+        }
+
+        @Override
+        public void deleteByCustomer(UUID customerId) {
+            active.values().removeIf(ref -> ref.customerId().equals(customerId));
+            bySession.values().removeIf(ref -> ref.customerId().equals(customerId));
         }
     }
 }

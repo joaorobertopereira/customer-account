@@ -14,8 +14,20 @@ public record VerificationConcluded(
         Integer score,
         List<String> reasonCodes,
         String providerTransactionId,
+        Instant validUntil,
         Instant occurredAt)
         implements VerificationEvent {
+
+    public VerificationConcluded(
+            VerificationId verificationId,
+            VerificationOutcome outcome,
+            ProviderId provider,
+            Integer score,
+            List<String> reasonCodes,
+            String providerTransactionId,
+            Instant occurredAt) {
+        this(verificationId, outcome, provider, score, reasonCodes, providerTransactionId, null, occurredAt);
+    }
 
     public VerificationConcluded {
         reasonCodes = List.copyOf(reasonCodes);

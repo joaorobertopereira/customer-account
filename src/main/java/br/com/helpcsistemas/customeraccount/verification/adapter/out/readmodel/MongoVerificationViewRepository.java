@@ -1,5 +1,6 @@
 package br.com.helpcsistemas.customeraccount.verification.adapter.out.readmodel;
 
+import br.com.helpcsistemas.customeraccount.privacy.PersonalDataCipher;
 import br.com.helpcsistemas.customeraccount.shared.domain.TenantId;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.VerificationViewRepositoryPort;
 import br.com.helpcsistemas.customeraccount.verification.application.query.VerificationView;
@@ -7,8 +8,10 @@ import br.com.helpcsistemas.customeraccount.verification.domain.model.ProviderFa
 import br.com.helpcsistemas.customeraccount.verification.domain.model.ProviderId;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationId;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationOutcome;
+import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationProcess;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationStatus;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationType;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -33,9 +36,11 @@ class MongoVerificationViewRepository implements VerificationViewRepositoryPort 
     static final String COLLECTION = "verification_views";
 
     private final MongoTemplate mongo;
+    private final PersonalDataCipher cipher;
 
-    MongoVerificationViewRepository(MongoTemplate mongo) {
+    MongoVerificationViewRepository(MongoTemplate mongo, PersonalDataCipher cipher) {
         this.mongo = mongo;
+        this.cipher = cipher;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -51,7 +56,12 @@ class MongoVerificationViewRepository implements VerificationViewRepositoryPort 
             indexes.createIndex(new Index()
                     .on("status", Sort.Direction.ASC)
                     .on("challengeExpiresAt", Sort.Direction.ASC)
+                    .on("hostedLinkExpiresAt", Sort.Direction.ASC)
                     .named("ix_awaiting_expiration"));
+            indexes.createIndex(new Index()
+                    .on("outcome", Sort.Direction.ASC)
+                    .on("validUntil", Sort.Direction.ASC)
+                    .named("ix_validity_expiration"));
         } catch (RuntimeException ex) {
             log.atWarn().setCause(ex).log("Não foi possível criar índices de verification_views");
         }
@@ -60,7 +70,7 @@ class MongoVerificationViewRepository implements VerificationViewRepositoryPort 
     @Override
     public Optional<VerificationView> findById(VerificationId id) {
         return Optional.ofNullable(mongo.findById(id.toString(), VerificationDocument.class, COLLECTION))
-                .map(VerificationDocument::toView);
+                .map(document -> document.toView(cipher));
     }
 
     @Override
@@ -72,13 +82,13 @@ class MongoVerificationViewRepository implements VerificationViewRepositoryPort 
                 .with(Sort.by(Sort.Direction.DESC, "requestedAt"))
                 .limit(100);
         return mongo.find(query, VerificationDocument.class, COLLECTION).stream()
-                .map(VerificationDocument::toView)
+                .map(document -> document.toView(cipher))
                 .toList();
     }
 
     @Override
     public void save(VerificationView view) {
-        mongo.save(VerificationDocument.from(view), COLLECTION);
+        mongo.save(VerificationDocument.from(view, cipher), COLLECTION);
     }
 
     @Override
@@ -88,10 +98,31 @@ class MongoVerificationViewRepository implements VerificationViewRepositoryPort 
 
     @Override
     public List<VerificationId> findAwaitingExpiredBefore(Instant instant, int limit) {
-        var query = Query.query(Criteria.where("status")
-                        .is(VerificationStatus.AWAITING_CONFIRMATION.name())
-                        .and("challengeExpiresAt")
-                        .lte(instant))
+        var query = Query.query(new Criteria()
+                        .orOperator(
+                                Criteria.where("status")
+                                        .is(VerificationStatus.AWAITING_CONFIRMATION.name())
+                                        .and("challengeExpiresAt")
+                                        .lte(instant),
+                                Criteria.where("status")
+                                        .is(VerificationStatus.AWAITING_HOLDER.name())
+                                        .and("hostedLinkExpiresAt")
+                                        .lte(instant.minus(VerificationProcess.HOSTED_LINK_GRACE_PERIOD))))
+                .limit(limit);
+        query.fields().include("_id");
+        return mongo.find(query, org.bson.Document.class, COLLECTION).stream()
+                .map(d -> VerificationId.of(d.getString("_id")))
+                .toList();
+    }
+
+    @Override
+    public List<VerificationId> findValidityExpiredBefore(Instant instant, int limit) {
+        var query = Query.query(Criteria.where("outcome")
+                        .is(VerificationOutcome.APPROVED.name())
+                        .and("validUntil")
+                        .lte(instant)
+                        .and("validityExpired")
+                        .ne(true))
                 .limit(limit);
         query.fields().include("_id");
         return mongo.find(query, org.bson.Document.class, COLLECTION).stream()
@@ -121,9 +152,14 @@ class MongoVerificationViewRepository implements VerificationViewRepositoryPort 
             int challengeAttempts,
             Instant deliveredAt,
             boolean deliveryFailed,
+            byte[] hostedLink,
+            Instant hostedLinkExpiresAt,
+            Instant validUntil,
+            boolean validityExpired,
+            boolean reused,
             long version) {
 
-        static VerificationDocument from(VerificationView v) {
+        static VerificationDocument from(VerificationView v, PersonalDataCipher cipher) {
             return new VerificationDocument(
                     v.id().toString(),
                     v.tenantId().value(),
@@ -147,10 +183,18 @@ class MongoVerificationViewRepository implements VerificationViewRepositoryPort 
                     v.challengeAttempts(),
                     v.deliveredAt(),
                     v.deliveryFailed(),
+                    v.hostedLink() == null
+                            ? null
+                            : cipher.encrypt(
+                                    v.customerId().toString(), v.hostedLink().getBytes(StandardCharsets.UTF_8)),
+                    v.hostedLinkExpiresAt(),
+                    v.validUntil(),
+                    v.validityExpired(),
+                    v.reused(),
                     v.version());
         }
 
-        VerificationView toView() {
+        VerificationView toView(PersonalDataCipher cipher) {
             return new VerificationView(
                     VerificationId.of(id),
                     TenantId.of(tenantId),
@@ -176,6 +220,13 @@ class MongoVerificationViewRepository implements VerificationViewRepositoryPort 
                     challengeAttempts,
                     deliveredAt,
                     deliveryFailed,
+                    hostedLink == null
+                            ? null
+                            : new String(cipher.decrypt(customerId, hostedLink), StandardCharsets.UTF_8),
+                    hostedLinkExpiresAt,
+                    validUntil,
+                    validityExpired,
+                    reused,
                     version);
         }
     }
