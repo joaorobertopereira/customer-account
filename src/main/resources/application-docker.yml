@@ -1,0 +1,20 @@
+# Perfil usado pelo docker-compose. Endpoints OTLP vêm de OTEL_EXPORTER_OTLP_ENDPOINT (mapeado pelo Boot).
+logging:
+  level:
+    br.com.helpcsistemas.customeraccount: DEBUG
+
+management:
+  otlp:
+    metrics:
+      export:
+        enabled: true
+        step: 15s
+
+app:
+  tenant:
+    webhook:
+      # Ambiente de desenvolvimento: permite receptores http em host.docker.internal/rede local.
+      allow-insecure-targets: ${TENANT_WEBHOOK_ALLOW_INSECURE:true}
+      allow-private-targets: ${TENANT_WEBHOOK_ALLOW_PRIVATE:true}
+  verification:
+    simulated-providers-enabled: ${VERIFICATION_SIMULATED_PROVIDERS:true}

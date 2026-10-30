@@ -1,0 +1,175 @@
+### customer-account — requisições de exemplo (REST Client / IntelliJ HTTP Client)
+### Pré-requisito: docker compose up -d --build
+
+@baseUrl = http://localhost:8080
+@keycloak = http://localhost:8180/realms/customer-account/protocol/openid-connect/token
+
+### 1) Token do Tenant A (client credentials)
+# @name tokenA
+POST {{keycloak}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=tenant-app-a&client_secret=tenant-app-a-dev-secret
+
+### 2) Token do Tenant B
+# @name tokenB
+POST {{keycloak}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=tenant-app-b&client_secret=tenant-app-b-dev-secret
+
+### 3) Cadastrar cliente (Tenant A)
+# @name register
+POST {{baseUrl}}/api/v1/customers
+Authorization: Bearer {{tokenA.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "cpf": "529.982.247-25",
+  "personalData": {
+    "fullName": "Maria da Silva Souza",
+    "socialName": null,
+    "birthDate": "1990-05-20",
+    "motherName": "Ana da Silva",
+    "maritalStatus": "MARRIED",
+    "nationality": "BR"
+  },
+  "email": "maria.souza@example.com",
+  "mobilePhone": "(11) 91234-5678",
+  "address": {
+    "zipCode": "01310-100",
+    "street": "Avenida Paulista",
+    "number": "1000",
+    "complement": "Apto 101",
+    "district": "Bela Vista",
+    "city": "São Paulo",
+    "state": "SP"
+  }
+}
+
+### 4) Consultar (Tenant A) — leitura do read model (pode levar alguns ms após o cadastro)
+GET {{baseUrl}}/api/v1/customers/{{register.response.body.id}}
+Authorization: Bearer {{tokenA.response.body.access_token}}
+
+### 5) Buscar por CPF (CPF no corpo)
+POST {{baseUrl}}/api/v1/customers/search
+Authorization: Bearer {{tokenA.response.body.access_token}}
+Content-Type: application/json
+
+{ "cpf": "52998224725" }
+
+### 6) Isolamento: Tenant B não enxerga o cliente do Tenant A (404)
+GET {{baseUrl}}/api/v1/customers/{{register.response.body.id}}
+Authorization: Bearer {{tokenB.response.body.access_token}}
+
+### 7) Alterar e-mail
+PUT {{baseUrl}}/api/v1/customers/{{register.response.body.id}}/email
+Authorization: Bearer {{tokenA.response.body.access_token}}
+Content-Type: application/json
+
+{ "email": "maria.nova@example.com" }
+
+### 8) Alterar endereço
+PUT {{baseUrl}}/api/v1/customers/{{register.response.body.id}}/address
+Authorization: Bearer {{tokenA.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "zipCode": "20040-020",
+  "street": "Avenida Rio Branco",
+  "number": "1",
+  "district": "Centro",
+  "city": "Rio de Janeiro",
+  "state": "RJ"
+}
+
+### 9) Eliminar dados (LGPD) — crypto-shredding
+DELETE {{baseUrl}}/api/v1/customers/{{register.response.body.id}}
+Authorization: Bearer {{tokenA.response.body.access_token}}
+
+### ===================== Validações (fase 2) =====================
+
+### 10) Token do administrador do Tenant A (DEV: password grant; produção = authorization code + PKCE + MFA)
+# @name adminA
+POST {{keycloak}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=tenant-app-a-admin&username=admin.tenant-a&password=dev&scope=openid
+
+### 11) Provedores disponíveis na plataforma
+GET {{baseUrl}}/api/v1/tenant/verification-providers
+Authorization: Bearer {{adminA.response.body.access_token}}
+
+### 12) Admin define o provedor de FACE_MATCH com contingência (vale na próxima validação)
+PUT {{baseUrl}}/api/v1/tenant/verification-policy/rules/FACE_MATCH
+Authorization: Bearer {{adminA.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "primaryProvider": "simulated-unavailable",
+  "fallbackProvider": "simulated-approve",
+  "minimumScore": 70,
+  "onInconclusive": "MANUAL_REVIEW",
+  "enabled": true,
+  "reason": "Contrato inicial"
+}
+
+### 13) Política vigente e histórico de alterações
+GET {{baseUrl}}/api/v1/tenant/verification-policy/history
+Authorization: Bearer {{adminA.response.body.access_token}}
+
+### 14) Tenant solicita validação (cadastre um cliente antes, passo 3)
+# @name verification
+POST {{baseUrl}}/api/v1/verifications
+Authorization: Bearer {{tokenA.response.body.access_token}}
+Content-Type: application/json
+
+{ "customerId": "{{register.response.body.id}}", "type": "FACE_MATCH" }
+
+### 15) Resultado padronizado (read model)
+GET {{baseUrl}}/api/v1/verifications/{{verification.response.body.id}}
+Authorization: Bearer {{tokenA.response.body.access_token}}
+
+### 16) Falhas de provedores registradas para o tenant
+GET {{baseUrl}}/api/v1/tenant/verification-incidents?limit=20
+Authorization: Bearer {{adminA.response.body.access_token}}
+
+### ===================== OTP e webhook (fase 2b) =====================
+
+### 17) Admin cadastra o webhook (guarde o "secret": aparece só agora). Receptor de teste: qualquer servidor na máquina
+PUT {{baseUrl}}/api/v1/tenant/webhook
+Authorization: Bearer {{adminA.response.body.access_token}}
+Content-Type: application/json
+
+{ "url": "http://host.docker.internal:9999/hooks/customer-account" }
+
+### 18) Admin define OTP próprio para posse de e-mail
+PUT {{baseUrl}}/api/v1/tenant/verification-policy/rules/EMAIL_OWNERSHIP
+Authorization: Bearer {{adminA.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "primaryProvider": "own-email-otp",
+  "onInconclusive": "REJECT",
+  "enabled": true,
+  "reason": "OTP por e-mail"
+}
+
+### 19) Tenant inicia a validação: status AWAITING_CONFIRMATION (código no Mailpit: http://localhost:8025)
+# @name otp
+POST {{baseUrl}}/api/v1/verifications
+Authorization: Bearer {{tokenA.response.body.access_token}}
+Content-Type: application/json
+
+{ "customerId": "{{register.response.body.id}}", "type": "EMAIL_OWNERSHIP" }
+
+### 20) Tenant envia o código digitado pelo titular
+POST {{baseUrl}}/api/v1/verifications/{{otp.response.body.id}}/confirmation
+Authorization: Bearer {{tokenA.response.body.access_token}}
+Content-Type: application/json
+
+{ "code": "123456" }
+
+### 21) Entregas do webhook (status, tentativas, último erro)
+GET {{baseUrl}}/api/v1/tenant/webhook/deliveries
+Authorization: Bearer {{adminA.response.body.access_token}}

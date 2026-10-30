@@ -1,0 +1,37 @@
+# Produção: todos os segredos vêm do ambiente/secret manager; nada de default sensível aqui.
+logging:
+  level:
+    br.com.helpcsistemas.customeraccount: INFO
+
+management:
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:0.1}
+  otlp:
+    metrics:
+      export:
+        enabled: true
+        step: 30s
+
+app:
+  security:
+    # Keycloak deve emitir acr=2 quando o admin autentica com segundo fator (fluxo step-up).
+    tenant-admin-acr-values: ${TENANT_ADMIN_ACR_VALUES:2}
+  secrets:
+    provider: vault
+    vault:
+      uri: ${VAULT_URI}
+  tenant:
+    webhook:
+      allow-insecure-targets: false
+      allow-private-targets: false
+  verification:
+    simulated-providers-enabled: false
+  eventstore:
+    # Ex.: kurrentdb+discover://user:pass@cluster:2113?tls=true
+    connection-string: ${KURRENTDB_CONNECTION_STRING}
+  privacy:
+    key-provider: vault
+    blind-index-key: ${PRIVACY_BLIND_INDEX_KEY}
+    vault:
+      uri: ${VAULT_URI}

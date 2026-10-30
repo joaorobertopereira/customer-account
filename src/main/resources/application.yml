@@ -1,0 +1,175 @@
+spring:
+  application:
+    name: customer-account
+  threads:
+    virtual:
+      enabled: true
+  task:
+    execution:
+      # Propaga contexto de observação (traceId/spanId) entre threads.
+      propagate-context: true
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://localhost:27017/customer_account}
+  data:
+    mongodb:
+      auto-index-creation: false
+  mvc:
+    problemdetails:
+      enabled: true
+  servlet:
+    multipart:
+      enabled: false
+  mail:
+    # Credenciais SMTP (produção) via SPRING_MAIL_USERNAME / SPRING_MAIL_PASSWORD.
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Com jwk-set-uri definido, o issuer-uri é usado só para validar o claim "iss" (sem discovery no startup).
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8180/realms/customer-account}
+          jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8180/realms/customer-account/protocol/openid-connect/certs}
+          audiences: customer-account
+
+server:
+  shutdown: graceful
+  max-http-request-header-size: 16KB
+  error:
+    include-stacktrace: never
+    include-message: never
+
+logging:
+  structured:
+    ecs:
+      service:
+        name: ${spring.application.name}
+        version: '@project.version@'
+        environment: ${APP_ENV:local}
+  level:
+    root: INFO
+    br.com.helpcsistemas.customeraccount: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,modulith,loggers
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  observations:
+    annotations:
+      enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  opentelemetry:
+    resource-attributes:
+      service.name: ${spring.application.name}
+      service.namespace: helpcsistemas
+      deployment.environment: ${APP_ENV:local}
+  otlp:
+    metrics:
+      export:
+        # Habilitado no perfil docker (sem collector local evita erros de conexão).
+        enabled: false
+
+resilience4j:
+  retry:
+    configs:
+      # Provedores de validação: uma instância por provedor (provider-<id>), criada sob demanda.
+      providers:
+        max-attempts: 2
+        wait-duration: 200ms
+        ignore-exceptions:
+          - io.github.resilience4j.circuitbreaker.CallNotPermittedException
+    instances:
+      vault:
+        max-attempts: 3
+        wait-duration: 100ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+  circuitbreaker:
+    configs:
+      providers:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+    instances:
+      vault:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 15s
+        permitted-number-of-calls-in-half-open-state: 3
+
+app:
+  security:
+    # acr exigido para administração do tenant (MFA). Vazio = não exige (dev). Produção: 2.
+    tenant-admin-acr-values: []
+  secrets:
+    # vault (produção) | local (somente desenvolvimento/testes)
+    provider: ${SECRETS_PROVIDER:vault}
+    cache-ttl: 5m
+    vault:
+      uri: ${VAULT_URI:http://localhost:8200}
+      token: ${VAULT_TOKEN:}
+      token-file: ${VAULT_TOKEN_FILE:}
+      kv-mount: secret
+      base-path: customer-account
+      timeout: 2s
+  tenant:
+    webhook:
+      allow-insecure-targets: false
+      allow-private-targets: false
+      timeout: 5s
+      max-attempts: 8
+      batch-size: 50
+      dispatch-interval: 5s
+  verification:
+    # Provedores de sandbox (simulated-*). Somente dev/teste.
+    simulated-providers-enabled: ${VERIFICATION_SIMULATED_PROVIDERS:false}
+    expiration-check-interval: 30s
+    # Credenciais vivem no cofre: providers/<provedor>/default ou providers/<provedor>/tenants/<tenant>.
+    providers:
+      own-email-otp:
+        enabled: ${VERIFICATION_OWN_EMAIL_OTP_ENABLED:true}
+        mail-from: ${OTP_MAIL_FROM:no-reply@helpcsistemas.com.br}
+      twilio-verify:
+        enabled: ${VERIFICATION_TWILIO_VERIFY_ENABLED:false}
+        base-url: https://verify.twilio.com
+        timeout: 5s
+      twilio-lookup:
+        enabled: ${VERIFICATION_TWILIO_LOOKUP_ENABLED:false}
+        base-url: https://lookups.twilio.com
+        timeout: 5s
+      zerobounce:
+        enabled: ${VERIFICATION_ZEROBOUNCE_ENABLED:false}
+        base-url: https://api.zerobounce.net
+        timeout: 5s
+  eventstore:
+    connection-string: ${KURRENTDB_CONNECTION_STRING:kurrentdb://localhost:2113?tls=false}
+    subscriptions-enabled: ${EVENTSTORE_SUBSCRIPTIONS_ENABLED:true}
+    resubscribe-delay: 5s
+    operation-timeout: 5s
+  privacy:
+    # vault (produção) | local (somente desenvolvimento/testes)
+    key-provider: ${PRIVACY_KEY_PROVIDER:vault}
+    blind-index-key: ${PRIVACY_BLIND_INDEX_KEY:}
+    local-master-key: ${PRIVACY_LOCAL_MASTER_KEY:}
+    data-key-cache-ttl: 5m
+    data-key-cache-max-size: 10000
+    vault:
+      uri: ${VAULT_URI:http://localhost:8200}
+      token: ${VAULT_TOKEN:}
+      token-file: ${VAULT_TOKEN_FILE:}
+      transit-mount: transit
+      key-name: customer-account-kek
+      timeout: 2s

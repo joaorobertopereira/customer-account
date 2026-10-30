@@ -1,0 +1,23 @@
+# Desenvolvimento na máquina (infra via docker compose: mongodb, kurrentdb, keycloak, lgtm).
+# As chaves abaixo são públicas e servem APENAS para desenvolvimento. Nunca reutilize em outro ambiente.
+logging:
+  level:
+    br.com.helpcsistemas.customeraccount: DEBUG
+
+spring:
+  mongodb:
+    uri: ${MONGODB_URI:mongodb://root:customer-account-dev@localhost:27017/customer_account?authSource=admin}
+
+app:
+  secrets:
+    provider: ${SECRETS_PROVIDER:local}
+  tenant:
+    webhook:
+      allow-insecure-targets: true
+      allow-private-targets: true
+  verification:
+    simulated-providers-enabled: true
+  privacy:
+    key-provider: ${PRIVACY_KEY_PROVIDER:local}
+    blind-index-key: ${PRIVACY_BLIND_INDEX_KEY:ZGV2LWJsaW5kLWluZGV4LWtleS1ub3QtZm9yLXByb2Q=}
+    local-master-key: ${PRIVACY_LOCAL_MASTER_KEY:ZGV2LWxvY2FsLW1hc3Rlci1rZXktbm90LTQtcHJvZCE=}

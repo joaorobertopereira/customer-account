@@ -1,0 +1,165 @@
+name: customer-account
+
+# Ambiente de DESENVOLVIMENTO completo. Credenciais abaixo são públicas e só servem para uso local.
+services:
+  app:
+    build: .
+    image: helpcsistemas/customer-account:local
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      APP_ENV: docker
+      # Mapeado pelo Spring Boot para traces (/v1/traces), métricas (/v1/metrics) e logs (/v1/logs).
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+      # Token é emitido via localhost (host); as chaves são buscadas pela rede interna.
+      JWT_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/customer-account
+      JWT_JWK_SET_URI: http://keycloak:8080/realms/customer-account/protocol/openid-connect/certs
+      MONGODB_URI: mongodb://root:${MONGO_PASSWORD:-customer-account-dev}@mongodb:27017/customer_account?authSource=admin
+      KURRENTDB_CONNECTION_STRING: kurrentdb://kurrentdb:2113?tls=false
+      PRIVACY_KEY_PROVIDER: vault
+      PRIVACY_BLIND_INDEX_KEY: ${PRIVACY_BLIND_INDEX_KEY:-ZGV2LWJsaW5kLWluZGV4LWtleS1ub3QtZm9yLXByb2Q=}
+      VAULT_URI: http://vault:8200
+      # Token de menor privilégio gerado pelo vault-init (datakey/decrypt da KEK + leitura de secret/customer-account/*).
+      VAULT_TOKEN_FILE: /vault/secrets/app-token
+      SECRETS_PROVIDER: vault
+      # OTP por e-mail próprio: Mailpit captura as mensagens (UI em http://localhost:8025).
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+    extra_hosts:
+      # Permite cadastrar webhooks de teste apontando para a máquina host.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - vault-secrets:/vault/secrets:ro
+    depends_on:
+      mailpit:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
+      kurrentdb:
+        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+      lgtm:
+        condition: service_started
+    restart: unless-stopped
+
+  # Event store (lado de escrita / fonte da verdade). UI: http://localhost:2113
+  kurrentdb:
+    # Mesmo produto publicado em docker.kurrent.io/kurrent-latest/kurrentdb (CDN do quay bloqueado na rede corporativa).
+    image: ${KURRENTDB_IMAGE:-kurrentplatform/kurrentdb}:${KURRENTDB_VERSION:-25.1}
+    environment:
+      KURRENTDB_CLUSTER_SIZE: 1
+      KURRENTDB_RUN_PROJECTIONS: All
+      KURRENTDB_START_STANDARD_PROJECTIONS: "true"
+      KURRENTDB_NODE_PORT: 2113
+      # Somente desenvolvimento. Em produção: TLS + autenticação (connection string com credenciais).
+      KURRENTDB_INSECURE: "true"
+      KURRENTDB_ENABLE_ATOM_PUB_OVER_HTTP: "true"
+    ports:
+      - "2113:2113"
+    volumes:
+      - kurrentdb-data:/var/lib/kurrentdb
+      - kurrentdb-logs:/var/log/kurrentdb
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:2113/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  # Read model, key store (DEKs embrulhadas) e checkpoints das subscriptions.
+  mongodb:
+    image: mongo:${MONGO_VERSION:-8.0}
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-customer-account-dev}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  # KEK (Transit). Storage em arquivo para sobreviver a restarts: se a KEK sumir, todos os dados ficam ilegíveis.
+  vault:
+    image: hashicorp/vault:${VAULT_VERSION:-1.20}
+    command: server
+    environment:
+      SKIP_SETCAP: "true"
+      VAULT_ADDR: http://127.0.0.1:8200
+    ports:
+      - "8200:8200"
+    volumes:
+      - ./docker/vault/config.hcl:/vault/config/config.hcl:ro
+      - vault-data:/vault/file
+
+  # Inicializa/destrava o Vault, cria a KEK e emite o token da aplicação (idempotente a cada `up`).
+  vault-init:
+    image: hashicorp/vault:${VAULT_VERSION:-1.20}
+    entrypoint: ["sh", "/vault/scripts/init.sh"]
+    environment:
+      VAULT_ADDR: http://vault:8200
+    volumes:
+      - ./docker/vault/init.sh:/vault/scripts/init.sh:ro
+      - ./docker/vault/customer-account-policy.hcl:/vault/scripts/customer-account-policy.hcl:ro
+      - vault-init-state:/vault/state
+      - vault-secrets:/vault/secrets
+    depends_on:
+      vault:
+        condition: service_started
+    restart: "no"
+
+  keycloak:
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak}:${KEYCLOAK_VERSION:-26.4}
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8180}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "${KEYCLOAK_PORT:-8180}:8080"
+    volumes:
+      - ./docker/keycloak/realm-customer-account.json:/opt/keycloak/data/import/realm-customer-account.json:ro
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000;
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3;
+          grep -q '"UP"' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # SMTP de desenvolvimento (1025) + UI/API (8025) para inspecionar os e-mails de OTP.
+  mailpit:
+    image: axllent/mailpit:${MAILPIT_VERSION:-latest}
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+  # Grafana (3000) + OpenTelemetry Collector (4317/4318) + Tempo (traces) + Loki (logs) + Prometheus (métricas)
+  lgtm:
+    image: grafana/otel-lgtm:${LGTM_VERSION:-latest}
+    ports:
+      - "3000:3000"
+      - "4317:4317"
+      - "4318:4318"
+
+volumes:
+  kurrentdb-data:
+  kurrentdb-logs:
+  mongodb-data:
+  vault-data:
+  vault-init-state:
+  vault-secrets:

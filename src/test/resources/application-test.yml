@@ -1,0 +1,21 @@
+logging:
+  level:
+    br.com.helpcsistemas.customeraccount: DEBUG
+
+app:
+  secrets:
+    provider: local
+  tenant:
+    webhook:
+      allow-insecure-targets: true
+      allow-private-targets: true
+      dispatch-interval: 500ms
+  verification:
+    simulated-providers-enabled: true
+    expiration-check-interval: 1s
+  eventstore:
+    resubscribe-delay: 1s
+  privacy:
+    key-provider: local
+    blind-index-key: ZGV2LWJsaW5kLWluZGV4LWtleS1ub3QtZm9yLXByb2Q=
+    local-master-key: ZGV2LWxvY2FsLW1hc3Rlci1rZXktbm90LTQtcHJvZCE=
