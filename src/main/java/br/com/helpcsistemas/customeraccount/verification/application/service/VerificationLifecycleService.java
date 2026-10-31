@@ -54,12 +54,34 @@ class VerificationLifecycleService implements VerificationLifecycleUseCase {
     }
 
     @Override
+    public int expireDueValidity() {
+        int expired = 0;
+        for (var id : views.findValidityExpiredBefore(clock.instant(), EXPIRATION_BATCH)) {
+            var process = processes.findById(id);
+            if (process.isPresent() && process.get().validityExpired(clock) && saveIgnoringConflict(process.get())) {
+                expired++;
+                log.atInfo().addKeyValue("verification.id", id).log("Validade da aprovação de identidade expirada");
+            }
+        }
+        return expired;
+    }
+
+    @Override
     public void notifyResult(VerificationId id) {
         processes
                 .findById(id)
                 .filter(p -> p.status() == VerificationStatus.COMPLETED)
                 .map(VerificationView::of)
                 .ifPresent(notifier::notifyResult);
+    }
+
+    @Override
+    public void notifyValidityExpired(VerificationId id) {
+        processes
+                .findById(id)
+                .filter(VerificationProcess::isValidityExpired)
+                .map(VerificationView::of)
+                .ifPresent(notifier::notifyValidityExpired);
     }
 
     @Override

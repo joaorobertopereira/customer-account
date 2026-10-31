@@ -5,15 +5,19 @@ import br.com.helpcsistemas.customeraccount.shared.domain.EventSourcedAggregate;
 import br.com.helpcsistemas.customeraccount.shared.domain.TenantId;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.ChallengeAnswerRejected;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.ChallengeIssued;
+import br.com.helpcsistemas.customeraccount.verification.domain.event.LateProviderResultIgnored;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.ProviderCallFailed;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.ProviderFailedOver;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.ProviderResponseReceived;
+import br.com.helpcsistemas.customeraccount.verification.domain.event.ProviderResultReceived;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.VerificationConcluded;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.VerificationDeliveryFailed;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.VerificationEvent;
+import br.com.helpcsistemas.customeraccount.verification.domain.event.VerificationLinkIssued;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.VerificationRequested;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.VerificationResultDelivered;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.VerificationSubmittedToProvider;
+import br.com.helpcsistemas.customeraccount.verification.domain.event.VerificationValidityExpired;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -32,6 +36,7 @@ import java.util.UUID;
 public class VerificationProcess extends EventSourcedAggregate<VerificationEvent> {
 
     public static final Duration DEFAULT_CHALLENGE_TTL = Duration.ofMinutes(10);
+    public static final Duration HOSTED_LINK_GRACE_PERIOD = Duration.ofMinutes(15);
     public static final int MAX_CHALLENGE_ATTEMPTS = 5;
     static final String SCORE_BELOW_THRESHOLD = "SCORE_BELOW_THRESHOLD";
     static final String ALL_PROVIDERS_UNAVAILABLE = "ALL_PROVIDERS_UNAVAILABLE";
@@ -56,6 +61,12 @@ public class VerificationProcess extends EventSourcedAggregate<VerificationEvent
     private Instant requestedAt;
     private Instant concludedAt;
     private Instant challengeExpiresAt;
+    private String hostedSessionId;
+    private String hostedLink;
+    private Instant hostedLinkExpiresAt;
+    private List<String> sharedFields = List.of();
+    private Instant validUntil;
+    private boolean validityExpired;
     private int challengeAttempts;
     private Instant deliveredAt;
     private boolean deliveryFailed;
@@ -155,10 +166,70 @@ public class VerificationProcess extends EventSourcedAggregate<VerificationEvent
         raise(new ProviderCallFailed(id, currentProvider, errorCode, latencyMs, clock.instant()));
     }
 
+    public void issueHostedLink(String sessionId, String url, Instant expiresAt, List<String> fields, Clock clock) {
+        ensurePending();
+        if (rule.type() != VerificationType.IDENTITY) {
+            throw new BusinessRuleException("HOSTED_IDENTITY_REQUIRED", "Link hospedado exige validação de identidade");
+        }
+        if (sessionId == null
+                || sessionId.isBlank()
+                || url == null
+                || url.isBlank()
+                || expiresAt == null
+                || !expiresAt.isAfter(clock.instant())) {
+            throw new IllegalArgumentException("Sessão hospedada inválida ou expirada");
+        }
+        raise(new VerificationLinkIssued(
+                id, currentProvider, sessionId, url, expiresAt, fields == null ? List.of() : fields, clock.instant()));
+    }
+
+    public void receiveHostedResult(HostedResult result, Clock clock) {
+        if (status != VerificationStatus.AWAITING_HOLDER) {
+            ignoreLateHostedResult(result.providerEventId(), clock);
+            return;
+        }
+        if (!hostedSessionId.equals(result.sessionId())) {
+            throw new BusinessRuleException("HOSTED_SESSION_MISMATCH", "Resultado não corresponde à sessão ativa");
+        }
+        var now = clock.instant();
+        raise(new ProviderResultReceived(id, currentProvider, result, now));
+        var classification = HostedResultClassifier.classify(result, rule.hostedResultRules());
+        raise(new VerificationConcluded(
+                id,
+                classification.outcome(),
+                currentProvider,
+                result.score(),
+                result.reasonCodes(),
+                result.sessionId(),
+                classification.validUntil(),
+                now));
+    }
+
+    public void ignoreLateHostedResult(String providerEventId, Clock clock) {
+        raise(new LateProviderResultIgnored(
+                id, currentProvider, providerEventId, "ALREADY_CONCLUDED", clock.instant()));
+    }
+
+    public boolean validityExpired(Clock clock) {
+        if (status != VerificationStatus.COMPLETED
+                || outcome != VerificationOutcome.APPROVED
+                || validUntil == null
+                || validityExpired
+                || clock.instant().isBefore(validUntil)) {
+            return false;
+        }
+        raise(new VerificationValidityExpired(id, validUntil, clock.instant()));
+        return true;
+    }
+
     /** @return true se a validação expirou agora */
     public boolean expireIfDue(Clock clock) {
         var now = clock.instant();
-        if (status != VerificationStatus.AWAITING_CONFIRMATION || now.isBefore(challengeExpiresAt)) {
+        boolean challengeExpired =
+                status == VerificationStatus.AWAITING_CONFIRMATION && !now.isBefore(challengeExpiresAt);
+        boolean hostedExpired = status == VerificationStatus.AWAITING_HOLDER
+                && !now.isBefore(hostedLinkExpiresAt.plus(HOSTED_LINK_GRACE_PERIOD));
+        if (!challengeExpired && !hostedExpired) {
             return false;
         }
         raise(new VerificationConcluded(
@@ -166,7 +237,7 @@ public class VerificationProcess extends EventSourcedAggregate<VerificationEvent
                 VerificationOutcome.EXPIRED,
                 currentProvider,
                 null,
-                List.of(CHALLENGE_EXPIRED),
+                List.of(challengeExpired ? CHALLENGE_EXPIRED : "HOSTED_LINK_EXPIRED"),
                 providerTransactionId,
                 now));
         return true;
@@ -236,6 +307,16 @@ public class VerificationProcess extends EventSourcedAggregate<VerificationEvent
                 challengeExpiresAt = e.expiresAt();
             }
             case ChallengeAnswerRejected e -> challengeAttempts = e.attempt();
+            case VerificationLinkIssued e -> {
+                status = VerificationStatus.AWAITING_HOLDER;
+                hostedSessionId = e.sessionId();
+                hostedLink = e.url();
+                hostedLinkExpiresAt = e.expiresAt();
+                sharedFields = e.sharedFields();
+            }
+            case ProviderResultReceived _ -> {}
+            case LateProviderResultIgnored _ -> {}
+            case VerificationValidityExpired _ -> validityExpired = true;
             case VerificationResultDelivered e -> deliveredAt = e.occurredAt();
             case VerificationDeliveryFailed _ -> deliveryFailed = true;
             case VerificationConcluded e -> {
@@ -245,6 +326,7 @@ public class VerificationProcess extends EventSourcedAggregate<VerificationEvent
                 score = e.score();
                 reasonCodes = e.reasonCodes();
                 providerTransactionId = e.providerTransactionId();
+                validUntil = e.validUntil();
                 concludedAt = e.occurredAt();
             }
         }
@@ -273,6 +355,30 @@ public class VerificationProcess extends EventSourcedAggregate<VerificationEvent
 
     public int challengeAttempts() {
         return challengeAttempts;
+    }
+
+    public String hostedSessionId() {
+        return hostedSessionId;
+    }
+
+    public String hostedLink() {
+        return hostedLink;
+    }
+
+    public Instant hostedLinkExpiresAt() {
+        return hostedLinkExpiresAt;
+    }
+
+    public List<String> sharedFields() {
+        return sharedFields;
+    }
+
+    public Instant validUntil() {
+        return validUntil;
+    }
+
+    public boolean isValidityExpired() {
+        return validityExpired;
     }
 
     public Instant deliveredAt() {

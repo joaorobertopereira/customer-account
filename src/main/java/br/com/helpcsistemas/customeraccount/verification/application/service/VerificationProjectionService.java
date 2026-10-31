@@ -1,6 +1,8 @@
 package br.com.helpcsistemas.customeraccount.verification.application.service;
 
 import br.com.helpcsistemas.customeraccount.verification.application.port.in.ProjectVerificationEventUseCase;
+import br.com.helpcsistemas.customeraccount.verification.application.port.out.HostedSessionRegistryPort;
+import br.com.helpcsistemas.customeraccount.verification.application.port.out.ProviderCallbackInboxPort;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.ProviderIncidentRepositoryPort;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.VerificationProcessRepositoryPort;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.VerificationViewRepositoryPort;
@@ -26,14 +28,20 @@ class VerificationProjectionService implements ProjectVerificationEventUseCase {
     private final VerificationProcessRepositoryPort processes;
     private final VerificationViewRepositoryPort views;
     private final ProviderIncidentRepositoryPort incidents;
+    private final HostedSessionRegistryPort hostedSessions;
+    private final ProviderCallbackInboxPort callbackInbox;
 
     VerificationProjectionService(
             VerificationProcessRepositoryPort processes,
             VerificationViewRepositoryPort views,
-            ProviderIncidentRepositoryPort incidents) {
+            ProviderIncidentRepositoryPort incidents,
+            HostedSessionRegistryPort hostedSessions,
+            ProviderCallbackInboxPort callbackInbox) {
         this.processes = processes;
         this.views = views;
         this.incidents = incidents;
+        this.hostedSessions = hostedSessions;
+        this.callbackInbox = callbackInbox;
     }
 
     @Override
@@ -49,6 +57,8 @@ class VerificationProjectionService implements ProjectVerificationEventUseCase {
     @Override
     public void eraseCustomerData(UUID customerId) {
         views.deleteByCustomer(customerId);
+        hostedSessions.deleteByCustomer(customerId);
+        callbackInbox.deleteByCustomer(customerId);
         log.atInfo().addKeyValue("customer.id", customerId).log("Resultados de validação do titular eliminados");
     }
 

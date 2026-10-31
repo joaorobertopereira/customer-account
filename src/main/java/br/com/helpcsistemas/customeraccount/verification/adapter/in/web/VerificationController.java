@@ -49,7 +49,10 @@ class VerificationController {
             @Parameter(hidden = true) TenantId tenant,
             @Parameter(hidden = true) Actor actor,
             @Valid @RequestBody RequestVerificationRequest request) {
-        var view = requests.request(tenant, request.customerId(), request.type(), actor.id());
+        var view = requests.request(tenant, request.customerId(), request.type(), actor.id(), request.returnUrl());
+        if (view.reused()) {
+            return ResponseEntity.ok(VerificationWebMapper.toResponse(view));
+        }
         return ResponseEntity.created(URI.create("/api/v1/verifications/" + view.id()))
                 .body(VerificationWebMapper.toResponse(view));
     }

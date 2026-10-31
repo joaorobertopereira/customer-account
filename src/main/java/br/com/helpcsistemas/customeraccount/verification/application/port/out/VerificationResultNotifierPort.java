@@ -6,4 +6,6 @@ public interface VerificationResultNotifierPort {
 
     /** Enfileira a notificação do resultado padronizado para o tenant (sem efeito se o tenant não tem webhook). */
     void notifyResult(VerificationView result);
+
+    default void notifyValidityExpired(VerificationView result) {}
 }

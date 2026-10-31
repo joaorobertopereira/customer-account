@@ -4,7 +4,7 @@ import br.com.helpcsistemas.customeraccount.verification.application.port.in.Ver
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/** Expira validações cujo desafio (OTP) não foi respondido no prazo. Seguro com várias instâncias (concorrência otimista). */
+/** Expira desafios, links hospedados e aprovações vencidas; concorrência otimista permite várias instâncias. */
 @Component
 class VerificationExpirationScheduler {
 
@@ -17,5 +17,6 @@ class VerificationExpirationScheduler {
     @Scheduled(fixedDelayString = "${app.verification.expiration-check-interval:30s}")
     public void expire() {
         lifecycle.expireDueChallenges();
+        lifecycle.expireDueValidity();
     }
 }

@@ -4,6 +4,7 @@ import br.com.helpcsistemas.customeraccount.tenant.TenantNotification;
 import br.com.helpcsistemas.customeraccount.tenant.TenantNotifications;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.VerificationResultNotifierPort;
 import br.com.helpcsistemas.customeraccount.verification.application.query.VerificationView;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -21,10 +22,12 @@ class TenantWebhookResultNotifier implements VerificationResultNotifierPort {
 
     private final TenantNotifications notifications;
     private final JsonMapper json;
+    private final Clock clock;
 
-    TenantWebhookResultNotifier(TenantNotifications notifications, JsonMapper json) {
+    TenantWebhookResultNotifier(TenantNotifications notifications, JsonMapper json, Clock clock) {
         this.notifications = notifications;
         this.json = json;
+        this.clock = clock;
     }
 
     @Override
@@ -50,7 +53,8 @@ class TenantWebhookResultNotifier implements VerificationResultNotifierPort {
                                         .map(f -> new Failure(f.provider().value(), f.errorCode(), f.occurredAt()))
                                         .toList()),
                         v.requestedAt(),
-                        v.concludedAt()));
+                        v.concludedAt(),
+                        v.validUntil()));
         notifications.enqueue(new TenantNotification(
                 v.tenantId(),
                 eventId,
@@ -59,6 +63,27 @@ class TenantWebhookResultNotifier implements VerificationResultNotifierPort {
                 v.customerId().toString(),
                 json.writeValueAsString(payload),
                 v.concludedAt()));
+    }
+
+    @Override
+    public void notifyValidityExpired(VerificationView v) {
+        var eventType = "verification.validity_expired";
+        var eventId = eventType + ":" + v.id();
+        var occurredAt = clock.instant();
+        var payload = new ValidityExpiredEnvelope(
+                eventId,
+                eventType,
+                occurredAt,
+                new ValidityExpiredResult(
+                        v.id().toString(), v.customerId(), v.type().name(), v.validUntil()));
+        notifications.enqueue(new TenantNotification(
+                v.tenantId(),
+                eventId,
+                eventType,
+                v.id().toString(),
+                v.customerId().toString(),
+                json.writeValueAsString(payload),
+                occurredAt));
     }
 
     record Envelope(String eventId, String eventType, Instant occurredAt, Result data) {}
@@ -75,9 +100,14 @@ class TenantWebhookResultNotifier implements VerificationResultNotifierPort {
             long policyVersion,
             Failover failover,
             Instant requestedAt,
-            Instant concludedAt) {}
+            Instant concludedAt,
+            Instant validUntil) {}
 
     record Failover(boolean occurred, List<Failure> failures) {}
 
     record Failure(String provider, String errorCode, Instant occurredAt) {}
+
+    record ValidityExpiredEnvelope(String eventId, String eventType, Instant occurredAt, ValidityExpiredResult data) {}
+
+    record ValidityExpiredResult(String verificationId, UUID customerId, String type, Instant validUntil) {}
 }

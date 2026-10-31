@@ -20,4 +20,6 @@ public interface VerificationViewRepositoryPort {
 
     /** Validações aguardando confirmação cujo prazo já venceu (candidatas à expiração). */
     List<VerificationId> findAwaitingExpiredBefore(Instant instant, int limit);
+
+    List<VerificationId> findValidityExpiredBefore(Instant instant, int limit);
 }

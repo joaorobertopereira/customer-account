@@ -5,6 +5,8 @@ public enum VerificationOutcome {
     APPROVED,
     REJECTED,
     MANUAL_REVIEW,
+    FRAUD_SUSPECTED,
+    ERROR,
     /** Nenhum provedor (primário nem contingência) conseguiu responder. */
     FAILED,
     /** O titular não respondeu ao desafio dentro do prazo. */

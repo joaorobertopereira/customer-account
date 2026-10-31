@@ -1,6 +1,9 @@
 # Fase 3a — Validação hospedada (link) com Legitimuz e Netrin genéricos
 
 > Pré-leitura: [00-contexto-atual.md](00-contexto-atual.md). Independente das demais fases.
+>
+> Status: base genérica implementada na branch `fase/3a-validacao-hospedada`. Não habilitar os adapters `legitimuz`
+> ou `netrin` até receber os contratos reais; `simulated-hosted` cobre o fluxo no compose.
 
 ## 1. Objetivo
 
@@ -210,16 +213,16 @@ Compose: nada novo (sandbox roda na própria app).
 
 ## 9. Tarefas
 
-- [ ] T1 Domínio: tipo/estado/outcomes, `HostedResult`, `HostedResultRules`, `HostedResultClassifier`, eventos e métodos do `VerificationProcess`, testes unitários (classificação: uma regra por caso).
-- [ ] T2 Política: `HostedResultRules` na regra, DTOs admin, codec `v2` + upcast `v1`, validações (IDENTITY exige regras).
-- [ ] T3 Aplicação: fluxo hospedado no `VerificationService`, `ActiveSessionRegistryPort`, `SessionCorrelationPort`, `ReceiveProviderResultUseCase`, status por cliente, agendadores.
-- [ ] T4 Gateway hospedado resiliente + contingência; `GenericHostedProvider` + properties; registrar `legitimuz` e `netrin` (desabilitados).
-- [ ] T5 Sandbox `simulated-hosted` + página de dev.
-- [ ] T6 Webhook de entrada + inbox + processador + `SecurityConfig` (rota pública).
-- [ ] T7 Codec dos novos eventos, read models, projeção `verification-status-v1`, eliminação.
-- [ ] T8 API web (DTOs, mapper, endpoint de status), webhook ao tenant atualizado, `http/api.http`.
-- [ ] T9 ITs: (a) link → callback aprovado → `APPROVED` + `validUntil`; (b) reuso do link pendente; (c) primário fora → reserva + incidente; (d) callback com fraude → `FRAUD_SUSPECTED`; (e) assinatura inválida → 401 e nada gravado; (f) callback duplicado idempotente; (g) callback após conclusão → `LateProviderResultIgnored`; (h) link expirado → `EXPIRED`; (i) isolamento entre tenants; (j) eliminação limpa tudo.
-- [ ] T10 README (seção 7), `spec/README.md` (status).
+- [x] T1 Domínio: tipo/estado/outcomes, `HostedResult`, `HostedResultRules`, `HostedResultClassifier`, eventos e métodos do `VerificationProcess`, testes unitários.
+- [x] T2 Política: `HostedResultRules` na regra, DTOs admin, eventos de política/solicitação/conclusão em v2, leitura compatível com payloads v1.
+- [x] T3 Aplicação: criação e reuso de sessão ativa, registry/correlação, recepção de callback, status por cliente e expiração.
+- [x] T4 Gateway hospedado resiliente + contingência; `GenericHostedProvider` configurável; `legitimuz` e `netrin` registrados, desabilitados por padrão.
+- [x] T5 Sandbox `simulated-hosted` + página de dev.
+- [x] T6 Webhook público autenticado por HMAC/timestamp + inbox cifrada, deduplicação, lease e processamento.
+- [x] T7 Codec, read model com link cifrado, índices de sessão, expiração e limpeza na eliminação.
+- [x] T8 API de link/status, notificação `verification.validity_expired`, `http/api.http` e README.
+- [x] T9 Testes de domínio/serviço/integração: link e reuso; callback assinado/inválido/duplicado; aprovação e validade; fraude; revalidação; eliminação.
+- [ ] T10 Configuração real: substituir paths/auth/mapeamentos placeholders após receber documentação/sandbox da Legitimuz e Netrin; adicionar testes de contrato com payloads anonimizados.
 
 ## 10. Adapter real (quando chegar a documentação de cada empresa)
 
@@ -230,5 +233,6 @@ Compose: nada novo (sandbox roda na própria app).
 
 ## 11. Pronto quando
 
-`mvn clean verify` verde (ArchUnit + Modulith), todos os ITs da T9 passando, fluxo demonstrável no compose com
-`simulated-hosted` (pedido → página de dev → callback → resultado) e README atualizado.
+Base genérica: `mvn clean verify` verde (ArchUnit + Modulith), ITs demonstram pedido → link → callback → resultado,
+fraude, revalidação e eliminação. Integrações reais só ficam prontas após o T10 e validação contratual com cada
+fornecedor.

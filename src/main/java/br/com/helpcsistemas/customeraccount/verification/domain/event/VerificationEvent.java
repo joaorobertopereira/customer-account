@@ -11,7 +11,11 @@ public sealed interface VerificationEvent extends DomainEvent
                 ProviderResponseReceived,
                 ChallengeIssued,
                 ChallengeAnswerRejected,
+                VerificationLinkIssued,
+                ProviderResultReceived,
+                LateProviderResultIgnored,
                 VerificationConcluded,
+                VerificationValidityExpired,
                 VerificationResultDelivered,
                 VerificationDeliveryFailed {
 

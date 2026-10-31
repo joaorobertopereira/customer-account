@@ -137,6 +137,9 @@ app:
     # Provedores de sandbox (simulated-*). Somente dev/teste.
     simulated-providers-enabled: ${VERIFICATION_SIMULATED_PROVIDERS:false}
     expiration-check-interval: 30s
+    callback-inbox:
+      interval: 2s
+      batch-size: 50
     # Credenciais vivem no cofre: providers/<provedor>/default ou providers/<provedor>/tenants/<tenant>.
     providers:
       own-email-otp:
@@ -154,6 +157,74 @@ app:
         enabled: ${VERIFICATION_ZEROBOUNCE_ENABLED:false}
         base-url: https://api.zerobounce.net
         timeout: 5s
+    hosted-providers:
+      legitimuz:
+        enabled: ${VERIFICATION_LEGITIMUZ_ENABLED:false}
+        base-url: ${VERIFICATION_LEGITIMUZ_BASE_URL:https://legitimuz.invalid}
+        timeout: 5s
+        auth-scheme: BEARER
+        create-session-path: /sessions
+        request-fields:
+          reference: reference
+          cpf: cpf
+          name: fullName
+          email: email
+          returnUrl: returnUrl
+        session-id-pointer: /id
+        url-pointer: /url
+        expires-at-pointer: /expiresAt
+        callback:
+          signature-header: X-Signature
+          timestamp-header: X-Timestamp
+          tolerance: 5m
+          event-id-pointer: /eventId
+          session-id-pointer: /sessionId
+          status-pointer: /status
+          score-pointer: /score
+          reason-codes-pointer: /reasons
+          fraud-signals-pointer: /fraudSignals
+          occurred-at-pointer: /occurredAt
+          status-map:
+            approved: COMPLETED
+            denied: USER_FAILED
+            fraud: FRAUD_DETECTED
+            error: PROVIDER_ERROR
+            expired: ABANDONED
+      netrin:
+        enabled: ${VERIFICATION_NETRIN_ENABLED:false}
+        base-url: ${VERIFICATION_NETRIN_BASE_URL:https://netrin.invalid}
+        timeout: 5s
+        auth-scheme: BEARER
+        create-session-path: /sessions
+        request-fields:
+          reference: reference
+          cpf: cpf
+          name: fullName
+          email: email
+          returnUrl: returnUrl
+        session-id-pointer: /id
+        url-pointer: /url
+        expires-at-pointer: /expiresAt
+        callback:
+          signature-header: X-Signature
+          timestamp-header: X-Timestamp
+          tolerance: 5m
+          event-id-pointer: /eventId
+          session-id-pointer: /sessionId
+          status-pointer: /status
+          score-pointer: /score
+          reason-codes-pointer: /reasons
+          fraud-signals-pointer: /fraudSignals
+          occurred-at-pointer: /occurredAt
+          status-map:
+            approved: COMPLETED
+            denied: USER_FAILED
+            fraud: FRAUD_DETECTED
+            error: PROVIDER_ERROR
+            expired: ABANDONED
+  simulated-hosted:
+    base-url: ${SIMULATED_HOSTED_BASE_URL:http://localhost:8080}
+    secret: ${SIMULATED_HOSTED_SECRET:local-only-not-for-production}
   eventstore:
     connection-string: ${KURRENTDB_CONNECTION_STRING:kurrentdb://localhost:2113?tls=false}
     subscriptions-enabled: ${EVENTSTORE_SUBSCRIPTIONS_ENABLED:true}

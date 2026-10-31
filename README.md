@@ -4,8 +4,8 @@ Core **multi-tenant de dados pessoais** compartilhado por várias aplicações (
 Spring Boot 4.1 + Spring Modulith 2.1, **CQRS + Event Sourcing** com **KurrentDB** (escrita) e **MongoDB** (leitura,
 via serviço de projeção), segurança e **LGPD by design**, observabilidade com **OpenTelemetry**.
 
-> Status: **Fases 1, 2a e 2b** concluídas (cadastro ES/CQRS; validações com provedor escolhido pelo tenant,
-> contingência automática; OTP, Twilio, ZeroBounce, credenciais no Vault e webhook assinado para o tenant).
+> Status: **Fases 1, 2a, 2b e base genérica da 3a** implementadas. A 3a suporta link hospedado e callback assinado;
+> a configuração real da Legitimuz/Netrin depende da documentação operacional de cada empresa.
 > Ver [Roadmap](#9-roadmap).
 
 ---
@@ -197,8 +197,8 @@ Cada tenant define, **por tipo de validação**, qual empresa será usada. A con
 
 | Campo da regra | Exemplo |
 |---|---|
-| Tipo de validação | `FACE_MATCH`, `LIVENESS`, `DOCUMENT`, `FRAUD_SCORE`, `EMAIL_OWNERSHIP`, `EMAIL_QUALITY`, `MOBILE_PHONE_OWNERSHIP`, `MOBILE_PHONE_RISK` |
-| Provedor primário | `own-email-otp`, `twilio-verify`, `twilio-lookup`, `zerobounce` (fase 2b); `legitimuz`, `netrin` (fase 3a) |
+| Tipo de validação | `IDENTITY` (link hospedado), `FACE_MATCH`, `LIVENESS`, `DOCUMENT`, `FRAUD_SCORE`, `EMAIL_OWNERSHIP`, `EMAIL_QUALITY`, `MOBILE_PHONE_OWNERSHIP`, `MOBILE_PHONE_RISK` |
+| Provedor primário | `legitimuz` ou `netrin` para `IDENTITY`; `own-email-otp`, `twilio-verify`, `twilio-lookup`, `zerobounce` para contato |
 | Provedor de contingência (opcional, recomendado) | Assume automaticamente em qualquer falha técnica do primário |
 | Score mínimo | Abaixo dele o resultado vira `REJECTED` (`SCORE_BELOW_THRESHOLD`) |
 | Ação para inconclusivo | `REJECT` ou `MANUAL_REVIEW` |
@@ -251,6 +251,10 @@ sequenceDiagram
 | `ProviderFailedOver` | de qual provedor para qual |
 | `ProviderResponseReceived` | decisão, score, motivos, id da transação, latência, **resposta bruta** — cifrado com a chave do titular |
 | `VerificationConcluded` | resultado padronizado após aplicar a regra do tenant (`APPROVED`, `REJECTED`, `MANUAL_REVIEW`, `FAILED`, `EXPIRED`) — cifrado |
+| `VerificationLinkIssued` | URL credencial, id e expiração da sessão, campos compartilhados — cifrado |
+| `ProviderResultReceived` | callback normalizado, id de evento e resposta bruta — cifrado |
+| `LateProviderResultIgnored` | callback tardio após conclusão, sem alterar o resultado |
+| `VerificationValidityExpired` | prazo da aprovação expirado |
 | `ChallengeIssued` | desafio enviado ao titular (OTP): provedor, id da transação, expiração |
 | `ChallengeAnswerRejected` | código incorreto (número da tentativa; máx. 5) |
 | `VerificationResultDelivered` / `VerificationDeliveryFailed` | entrega do resultado ao webhook do tenant (status HTTP, tentativas) |
@@ -281,6 +285,10 @@ Decisões aplicadas:
 | Posse de e-mail | OTP próprio | Código com expiração, hash no armazenamento, rate limit |
 | Qualidade do e-mail | **ZeroBounce** | Descartáveis, inexistentes, catch-all |
 | Posse e risco do celular | **Twilio Verify + Lookup** | OTP SMS/WhatsApp, tipo de linha, **SIM swap** |
+
+As integrações de identidade estão implementadas como adaptadores genéricos, desligados por padrão e sem assumir
+contratos reais. Só habilite `legitimuz`/`netrin` após configurar paths, mapeamentos, autenticação e credenciais
+com a documentação oficial. Os templates atuais são placeholders de desenvolvimento, não endpoints utilizáveis.
 
 ### 7.4 Validações de posse (OTP) — fase 2b
 
@@ -319,9 +327,44 @@ vault kv put secret/customer-account/providers/twilio-verify/tenants/tenant-app-
   API responde `PROVIDER_TEMPORARILY_UNAVAILABLE` para nova tentativa. A checagem não faz retry automático (não
   consome tentativas do titular no provedor).
 
-### 7.5 Entrega do resultado por webhook (módulo `tenant`)
+### 7.5 Validação de identidade hospedada (fase 3a)
 
-O tenant cadastra a URL (role `tenant-admin`); toda validação concluída gera `verification.completed`.
+O BFF do tenant solicita `IDENTITY`; o backend cria uma sessão no provedor escolhido pelo tenant e retorna
+`link.url` + `link.expiresAt`. A URL é cifrada no event store e no Mongo, e só aparece enquanto a sessão está
+aguardando o titular. Uma nova solicitação para o mesmo tenant/cliente enquanto o link não expirou recebe `200`
+com a mesma validação (`reused=true`); depois de concluída/expirada, uma nova chamada cria outra sessão e preserva
+todo o histórico.
+
+| Método | Caminho | Uso |
+|---|---|---|
+| `POST` | `/api/v1/verifications` `{customerId, type: "IDENTITY", returnUrl?}` | 201 com link; 200 se sessão ativa já existe |
+| `GET` | `/api/v1/verifications/{id}` | status, link enquanto pendente, outcome e `validUntil` |
+| `GET` | `/api/v1/customers/{customerId}/verification-status?type=IDENTITY` | `NONE`, `PENDING`, `VALID`, `EXPIRED` ou `NOT_APPROVED` |
+| `POST` | `/api/v1/provider-callbacks/{providerId}` | callback público autenticado por HMAC/timestamp; corpo até 256 KiB; responde 202 |
+
+O callback é deduplicado por `provider + eventId`, cifrado na inbox `verification_callback_inbox` e processado
+assincronamente. Sessão desconhecida vira item `UNMATCHED`; resultado correlacionado é escrito no stream da
+validação e classificado com a regra congelada no pedido. O prazo do link tem tolerância de 15 minutos para callback;
+aprovação expira conforme `validityDays` da política e gera `verification.validity_expired` no webhook do tenant.
+
+Para a demonstração local, configure a regra para `simulated-hosted`, peça o link e abra-o no navegador. A página
+`/dev/hosted-verification/{sessionId}` permite simular conclusão, fraude, erro ou abandono e envia callback assinado
+pela mesma rota de entrada. O provider simulado só existe com `app.verification.simulated-providers-enabled=true`;
+seu segredo padrão é público e não deve ser habilitado em produção.
+
+**Regras específicas de `IDENTITY`** (JSON opcional no `PUT .../rules/IDENTITY`): `scoreBelowAction`,
+`fraudReasonCodes`, `manualReviewReasonCodes`, `onProviderError`, `validityDays` (1–3650) e
+`allowedReturnUrlPrefixes`. `returnUrl` só é aceito em HTTPS, sem credenciais/fragmento e dentro de um prefixo
+permitido pelo tenant. Precedência: fraude → erro do provedor → abandono → falha do usuário → score/revisão → aprovado.
+
+Credenciais das integrações genéricas: `secret/customer-account/providers/<legitimuz|netrin>/default` (ou
+`.../tenants/<tenantId>`). Campos mínimos esperados: `api_token`, `webhook_secret` (ou `client_id`/`client_secret`
+para `auth-scheme: BASIC`). A tabela de mapeamento e URLs atuais são placeholders até recebermos os contratos.
+
+### 7.6 Entrega do resultado por webhook (módulo `tenant`)
+
+O tenant cadastra a URL (role `tenant-admin`); toda validação concluída gera `verification.completed` e o vencimento
+de uma aprovação gera `verification.validity_expired`.
 
 | Método | Caminho | Observação |
 |---|---|---|
@@ -367,7 +410,10 @@ providerTransactionId, policyVersion, failover, requestedAt, concludedAt}}` — 
 | `app.privacy.data-key-cache-ttl` | TTL do cache de DEKs em memória (trade-off latência × janela pós-shredding) |
 | `app.verification.simulated-providers-enabled` | Provedores de sandbox (`true` em local/docker/test; **sempre `false` em produção**) |
 | `app.verification.providers.*` | Liga/desliga e URL/timeout de `own-email-otp`, `twilio-verify`, `twilio-lookup`, `zerobounce` |
-| `app.verification.expiration-check-interval` | Frequência de expiração de desafios OTP (padrão 30s) |
+| `app.verification.hosted-providers.*` | Liga/desliga `legitimuz`/`netrin`; URL, método genérico, mapeamento de campos e callbacks (desabilitado por padrão) |
+| `app.verification.callback-inbox.interval` | Frequência de processamento de callbacks autenticados (padrão 2s) |
+| `app.verification.expiration-check-interval` | Frequência de expiração de desafios/links e validade de aprovação (padrão 30s) |
+| `app.simulated-hosted.*` | URL e segredo do provider local de demonstração (não usar em produção) |
 | `app.secrets.*` | `provider` (`vault`/`local`), `cache-ttl`, `vault.{uri,token,token-file,kv-mount,base-path}` |
 | `app.tenant.webhook.*` | `allow-insecure-targets`/`allow-private-targets` (**só dev**), `timeout`, `max-attempts`, `batch-size`, `dispatch-interval` |
 | `app.security.tenant-admin-acr-values` | `acr` exigido para administração do tenant (produção: `2`) |
@@ -383,7 +429,7 @@ providerTransactionId, policyVersion, failover, requestedAt, concludedAt}}` — 
 | **1 (feito)** | Módulos base, Customer ES/CQRS, projeção Mongo, crypto-shredding, Vault, Keycloak (tenants), OTel, compose, testes |
 | **2a (feito)** | Módulo `verification`: `TenantVerificationPolicy` + API de administração com histórico (role `tenant-admin` por console de tenant), `VerificationProcess` com todos os eventos, gateway com retry/circuit breaker por provedor, **contingência automática com registro da falha** (resultado + incidentes do tenant), resultado padronizado, read model e eliminação, provedores de sandbox |
 | **2b (feito)** | Módulo `secrets` (Vault KV, credencial por provedor e por tenant); OTP próprio por e-mail, Twilio Verify/Lookup, ZeroBounce; desafio com `AWAITING_CONFIRMATION`, 5 tentativas e expiração; módulo `tenant` com webhook assinado (HMAC), fila com retentativas, proteção SSRF e `VerificationResultDelivered`; `acr` exigido para admins (produção); Mailpit no compose |
-| 3a – Validação hospedada | Link de validação (Legitimuz/Netrin genéricos), webhook de entrada, regras do tenant, validade/revalidação — [spec](spec/fase-3a-validacao-hospedada.md) |
+| **3a (base genérica feita)** | Link hospedado, reuso de sessão, webhook de entrada com HMAC + inbox, regras por tenant (fraude/score/revisão/erro), validade/revalidação, sandbox — [spec](spec/fase-3a-validacao-hospedada.md). **Pendente:** configurar contratos reais Legitimuz/Netrin quando recebidos |
 | 3b – Canal de status | Token de canal, polling público, push SignalR/SSE — [spec](spec/fase-3b-canal-tempo-real.md) |
 | 4a – Autenticação | Passwordless + 2FA do titular, MFA/step-up dos admins — [spec](spec/fase-4a-autenticacao-titular-admin.md) |
 | 4b – Consentimento | Módulo `consent`, vínculo entre tenants com aceite do titular, minimização — [spec](spec/fase-4b-consentimento.md) |

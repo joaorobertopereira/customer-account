@@ -1,5 +1,6 @@
 package br.com.helpcsistemas.customeraccount.verification.adapter.in.web;
 
+import br.com.helpcsistemas.customeraccount.verification.domain.model.HostedResultRules;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.InconclusiveAction;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationOutcome;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationStatus;
@@ -10,6 +11,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -20,7 +22,7 @@ final class VerificationDtos {
     private VerificationDtos() {}
 
     record RequestVerificationRequest(
-            @NotNull UUID customerId, @NotNull VerificationType type) {}
+            @NotNull UUID customerId, @NotNull VerificationType type, URI returnUrl) {}
 
     /** Resultado padronizado: mesmo formato para qualquer provedor. */
     record VerificationResponse(
@@ -37,6 +39,9 @@ final class VerificationDtos {
             FailoverResponse failover,
             ChallengeResponse challenge,
             DeliveryResponse delivery,
+            HostedLinkResponse link,
+            Instant validUntil,
+            boolean reused,
             Instant requestedAt,
             Instant concludedAt) {}
 
@@ -45,6 +50,8 @@ final class VerificationDtos {
 
     /** Entrega ao webhook do tenant (nulo enquanto não houver desfecho). */
     record DeliveryResponse(Instant deliveredAt, boolean failed) {}
+
+    record HostedLinkResponse(String url, Instant expiresAt) {}
 
     record ConfirmVerificationRequest(
             @NotBlank @Pattern(regexp = "\\d{4,10}") String code) {
@@ -66,7 +73,13 @@ final class VerificationDtos {
             @Min(0) @Max(100) Integer minimumScore,
             @NotNull InconclusiveAction onInconclusive,
             @NotNull Boolean enabled,
-            @NotBlank @Size(max = 200) String reason) {}
+            @NotBlank @Size(max = 200) String reason,
+            HostedResultRules.Action scoreBelowAction,
+            @Size(max = 100) List<String> fraudReasonCodes,
+            @Size(max = 100) List<String> manualReviewReasonCodes,
+            HostedResultRules.Action onProviderError,
+            @Min(1) @Max(3650) Integer validityDays,
+            @Size(max = 20) List<String> allowedReturnUrlPrefixes) {}
 
     record RuleResponse(
             VerificationType type,
@@ -74,7 +87,8 @@ final class VerificationDtos {
             String fallbackProvider,
             Integer minimumScore,
             InconclusiveAction onInconclusive,
-            boolean enabled) {}
+            boolean enabled,
+            HostedResultRules hostedResultRules) {}
 
     record PolicyResponse(String tenantId, long version, List<RuleResponse> rules) {}
 

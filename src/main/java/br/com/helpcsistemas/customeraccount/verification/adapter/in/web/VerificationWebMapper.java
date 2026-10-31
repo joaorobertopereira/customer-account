@@ -4,6 +4,7 @@ import br.com.helpcsistemas.customeraccount.verification.adapter.in.web.Verifica
 import br.com.helpcsistemas.customeraccount.verification.adapter.in.web.VerificationDtos.ConfigureRuleRequest;
 import br.com.helpcsistemas.customeraccount.verification.adapter.in.web.VerificationDtos.DeliveryResponse;
 import br.com.helpcsistemas.customeraccount.verification.adapter.in.web.VerificationDtos.FailoverResponse;
+import br.com.helpcsistemas.customeraccount.verification.adapter.in.web.VerificationDtos.HostedLinkResponse;
 import br.com.helpcsistemas.customeraccount.verification.adapter.in.web.VerificationDtos.IncidentResponse;
 import br.com.helpcsistemas.customeraccount.verification.adapter.in.web.VerificationDtos.PolicyChangeResponse;
 import br.com.helpcsistemas.customeraccount.verification.adapter.in.web.VerificationDtos.PolicyResponse;
@@ -16,6 +17,7 @@ import br.com.helpcsistemas.customeraccount.verification.application.query.Provi
 import br.com.helpcsistemas.customeraccount.verification.application.query.VerificationPolicyView;
 import br.com.helpcsistemas.customeraccount.verification.application.query.VerificationView;
 import br.com.helpcsistemas.customeraccount.verification.domain.event.VerificationRuleConfigured;
+import br.com.helpcsistemas.customeraccount.verification.domain.model.HostedResultRules;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.ProviderId;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationProcess;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.VerificationRule;
@@ -32,7 +34,21 @@ final class VerificationWebMapper {
                 ProviderId.ofNullable(request.fallbackProvider()),
                 request.minimumScore(),
                 request.onInconclusive(),
-                request.enabled());
+                request.enabled(),
+                type == VerificationType.IDENTITY
+                        ? new HostedResultRules(
+                                request.minimumScore(),
+                                request.scoreBelowAction() == null
+                                        ? HostedResultRules.Action.REJECT
+                                        : request.scoreBelowAction(),
+                                request.fraudReasonCodes(),
+                                request.manualReviewReasonCodes(),
+                                request.onProviderError() == null
+                                        ? HostedResultRules.Action.ERROR
+                                        : request.onProviderError(),
+                                request.validityDays() == null ? 365 : request.validityDays(),
+                                request.allowedReturnUrlPrefixes())
+                        : null);
     }
 
     static VerificationResponse toResponse(VerificationView v) {
@@ -62,6 +78,9 @@ final class VerificationWebMapper {
                 v.deliveredAt() == null && !v.deliveryFailed()
                         ? null
                         : new DeliveryResponse(v.deliveredAt(), v.deliveryFailed()),
+                v.hostedLink() == null ? null : new HostedLinkResponse(v.hostedLink(), v.hostedLinkExpiresAt()),
+                v.validUntil(),
+                v.reused(),
                 v.requestedAt(),
                 v.concludedAt());
     }
@@ -109,6 +128,7 @@ final class VerificationWebMapper {
                         rule.hasFallback() ? rule.fallback().value() : null,
                         rule.minimumScore(),
                         rule.onInconclusive(),
-                        rule.enabled());
+                        rule.enabled(),
+                        rule.hostedResultRules());
     }
 }

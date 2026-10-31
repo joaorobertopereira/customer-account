@@ -25,7 +25,7 @@ Resumo para retomar o trabalho sem reler o projeto inteiro.
 | `privacy` | `PersonalDataCipher` (AES-GCM por titular, DEK embrulhada no Vault Transit), `BlindIndex` (HMAC), `CryptoShredder` | todas |
 | `secrets` | `SecretStore.read(path)` → Vault KV v2 (`secret/customer-account/<path>`) com cache; `local` em dev/test | `SecretStore` |
 | `customer` | Agregado `Customer` (ES), reserva de CPF, read model `customer_views`, eliminação | `CustomerDirectory`, `CustomerSnapshot`, `CustomerErasureCompleted` |
-| `verification` | `TenantVerificationPolicy` (stream `verification_policy-<tenant>`), `VerificationProcess` (stream `verification-<id>`), `ResilientProviderGateway`, read model `verification_views`, incidentes | — |
+| `verification` | Política por tenant; processo síncrono (OTP) e hospedado (link/callback) event-sourced; `ResilientProviderGateway`; read model/status atual, inbox e incidente | — |
 | `tenant` | Webhook do tenant (`tenant_webhooks`), fila `tenant_notifications`, assinatura `v1=HMAC`, guarda SSRF | `TenantNotifications`, `TenantNotification`, `TenantNotificationDelivered/Failed` |
 
 ## Arquitetura hexagonal por módulo (verificada por `HexagonalArchitectureTests`)
@@ -53,15 +53,19 @@ ser `public`; `@ConfigurationProperties` são excluídos).
   `customerId` como subject (crypto-shredding). Eventos técnicos sem PII podem ser JSON em claro.
 - **Reserva/unicidade**: stream de lock com `ExpectedRevision.noStream()` (ex.: `customer_cpf-<HMAC>`).
 - **Projeção**: `EventStreamSubscriber` com nome `<algo>-v1`, idempotente por revisão; consultas só no read model.
-- **Provedor de validação**: implementar `verification.adapter.out.provider.VerificationProvider`
+- **Provedor de validação síncrono**: implementar `verification.adapter.out.provider.VerificationProvider`
   (`id`, `supportedTypes`, `verify`, `confirm`); credenciais via `ProviderCredentialsResolver`
   (`providers/<id>/tenants/<tenant>` → `providers/<id>/default`); HTTP via `ProviderHttpClients.create`.
   O gateway aplica retry + circuit breaker por provedor e converte falhas em `ProviderUnavailableException`
   (aciona contingência).
+- **Validação hospedada**: `HostedVerificationProvider.start` retorna `HostedSession`; `HostedCallbackProvider`
+  autentica/normaliza callback. `GenericHostedProvider` lê `app.verification.hosted-providers.*` (placeholders
+  desabilitados para Legitimuz/Netrin); `SimulatedHostedProvider` exercita o fluxo no compose. Reuso/correlação em
+  `HostedSessionRegistryPort`; callback autenticado vai à inbox Mongo e é processado depois.
 - **Resultado padronizado**: `ProviderResult(decision, score, reasonCodes, transactionId, latencyMs, rawResponse)`;
   `ProviderDecision` = `APPROVED|REJECTED|INCONCLUSIVE|CHALLENGE_SENT`.
-- **Processo**: `VerificationStatus` = `PENDING|AWAITING_CONFIRMATION|COMPLETED`;
-  `VerificationOutcome` = `APPROVED|REJECTED|MANUAL_REVIEW|FAILED|EXPIRED`. Expiração por
+- **Processo**: `VerificationStatus` = `PENDING|AWAITING_CONFIRMATION|AWAITING_HOLDER|COMPLETED`;
+  `VerificationOutcome` = `APPROVED|REJECTED|MANUAL_REVIEW|FRAUD_SUSPECTED|ERROR|FAILED|EXPIRED`. Expiração por
   `VerificationExpirationScheduler` (`findAwaitingExpiredBefore`). Conclusão notifica o tenant via
   `VerificationResultNotificationSubscriber` → `TenantNotifications` (webhook `verification.completed`).
 - **Auditoria**: logs com `audit.action`, `tenant.id`, `changed.by`; nunca logar argumentos/PII.
