@@ -11,6 +11,7 @@ final class CustomerResponses {
     record RegisteredResponse(String id) {}
 
     /** @param version revisão do read model; permite ao tenant detectar leitura ainda não atualizada */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     record CustomerResponse(
             String id,
             long version,
@@ -23,6 +24,7 @@ final class CustomerResponses {
             Instant createdAt,
             Instant updatedAt) {}
 
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     record PersonalDataResponse(
             String fullName,
             String socialName,

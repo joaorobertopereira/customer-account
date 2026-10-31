@@ -9,4 +9,6 @@ public interface CustomerDirectory {
 
     /** Lê do event store (consistência forte); vazio se não existir, eliminado ou não vinculado ao tenant. */
     Optional<CustomerSnapshot> findLinkedCustomer(TenantId tenant, UUID customerId);
+
+    Optional<java.time.Instant> linkedAt(TenantId tenant, UUID customerId);
 }

@@ -6,8 +6,12 @@ import br.com.helpcsistemas.customeraccount.customer.application.query.CustomerV
 import br.com.helpcsistemas.customeraccount.customer.domain.event.AddressChanged;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerErased;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerEvent;
+import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkApproved;
+import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkRejected;
+import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkRequested;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkedToTenant;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerRegistered;
+import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerUnlinkedFromTenant;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.EmailChanged;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.MobilePhoneChanged;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.PersonalDataUpdated;
@@ -69,6 +73,9 @@ class CustomerProjectionService implements ProjectCustomerEventUseCase {
     private static CustomerView apply(CustomerView view, CustomerEvent event, long revision) {
         return switch (event) {
             case CustomerLinkedToTenant e -> view.withTenant(e.tenantId(), revision, e.occurredAt());
+            case CustomerUnlinkedFromTenant e -> view.withoutTenant(e.tenantId(), revision, e.occurredAt());
+            case CustomerLinkRequested _, CustomerLinkApproved _, CustomerLinkRejected _ ->
+                view.withRevision(revision, event.occurredAt());
             case PersonalDataUpdated e -> view.withPersonalData(e.personalData(), revision, e.occurredAt());
             case AddressChanged e -> view.withAddress(e.address(), revision, e.occurredAt());
             case EmailChanged e -> view.withEmail(e.email(), revision, e.occurredAt());

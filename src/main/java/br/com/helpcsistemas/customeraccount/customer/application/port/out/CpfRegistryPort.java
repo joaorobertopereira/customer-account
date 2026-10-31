@@ -9,6 +9,8 @@ public interface CpfRegistryPort {
     /** @return false se o CPF já pertence a outro cliente */
     boolean reserve(Cpf cpf, CustomerId owner);
 
+    java.util.Optional<CustomerId> findOwner(Cpf cpf);
+
     /** Libera o CPF se ainda reservado para {@code owner}. Idempotente. */
     void release(Cpf cpf, CustomerId owner);
 }

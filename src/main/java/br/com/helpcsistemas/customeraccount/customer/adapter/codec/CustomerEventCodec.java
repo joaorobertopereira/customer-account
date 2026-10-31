@@ -12,8 +12,12 @@ import br.com.helpcsistemas.customeraccount.customer.adapter.codec.CustomerPaylo
 import br.com.helpcsistemas.customeraccount.customer.domain.event.AddressChanged;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerErased;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerEvent;
+import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkApproved;
+import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkRejected;
+import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkRequested;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkedToTenant;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerRegistered;
+import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerUnlinkedFromTenant;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.EmailChanged;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.MobilePhoneChanged;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.PersonalDataUpdated;
@@ -90,6 +94,38 @@ public class CustomerEventCodec {
                 : stored.data();
 
         return switch (stored.type()) {
+            case "CustomerLinkRequested.v1" -> {
+                var p = json.readValue(data, LinkRequestedV1.class);
+                yield new CustomerLinkRequested(
+                        CustomerId.of(p.customerId()),
+                        TenantId.of(p.tenantId()),
+                        p.requestId(),
+                        p.personalData().toDomain(),
+                        new Email(p.email()),
+                        new MobilePhone(p.phone()),
+                        AddressV1.toDomainOrNull(p.address()),
+                        p.expiresAt(),
+                        p.occurredAt());
+            }
+            case "CustomerLinkApproved.v1" -> {
+                var p = json.readValue(data, LinkDecisionV1.class);
+                yield new CustomerLinkApproved(
+                        CustomerId.of(p.customerId()), TenantId.of(p.tenantId()), p.requestId(), p.occurredAt());
+            }
+            case "CustomerLinkRejected.v1" -> {
+                var p = json.readValue(data, LinkDecisionV1.class);
+                yield new CustomerLinkRejected(
+                        CustomerId.of(p.customerId()),
+                        TenantId.of(p.tenantId()),
+                        p.requestId(),
+                        p.reason(),
+                        p.occurredAt());
+            }
+            case "CustomerUnlinkedFromTenant.v1" -> {
+                var p = json.readValue(data, LinkedToTenantV1.class);
+                yield new CustomerUnlinkedFromTenant(
+                        CustomerId.of(p.customerId()), TenantId.of(p.tenantId()), p.occurredAt());
+            }
             case REGISTERED -> {
                 var p = json.readValue(data, RegisteredV1.class);
                 yield new CustomerRegistered(
@@ -153,6 +189,10 @@ public class CustomerEventCodec {
 
     private static String typeOf(CustomerEvent event) {
         return switch (event) {
+            case CustomerLinkRequested _ -> "CustomerLinkRequested.v1";
+            case CustomerLinkApproved _ -> "CustomerLinkApproved.v1";
+            case CustomerLinkRejected _ -> "CustomerLinkRejected.v1";
+            case CustomerUnlinkedFromTenant _ -> "CustomerUnlinkedFromTenant.v1";
             case CustomerRegistered _ -> REGISTERED;
             case CustomerLinkedToTenant _ -> LINKED_TO_TENANT;
             case PersonalDataUpdated _ -> PERSONAL_DATA_UPDATED;
@@ -165,6 +205,25 @@ public class CustomerEventCodec {
 
     private static Object toPayload(CustomerEvent event) {
         return switch (event) {
+            case CustomerLinkRequested e ->
+                new LinkRequestedV1(
+                        e.customerId().toString(),
+                        e.tenantId().value(),
+                        e.requestId(),
+                        PersonalDataV1.from(e.suggestedPersonalData()),
+                        e.suggestedEmail().value(),
+                        e.suggestedMobilePhone().value(),
+                        AddressV1.from(e.suggestedAddress()),
+                        e.expiresAt(),
+                        e.occurredAt());
+            case CustomerLinkApproved e ->
+                new LinkDecisionV1(
+                        e.customerId().toString(), e.tenantId().value(), e.requestId(), null, e.occurredAt());
+            case CustomerLinkRejected e ->
+                new LinkDecisionV1(
+                        e.customerId().toString(), e.tenantId().value(), e.requestId(), e.reason(), e.occurredAt());
+            case CustomerUnlinkedFromTenant e ->
+                new LinkedToTenantV1(e.customerId().toString(), e.tenantId().value(), e.occurredAt());
             case CustomerRegistered e ->
                 new RegisteredV1(
                         e.customerId().toString(),
@@ -202,4 +261,22 @@ public class CustomerEventCodec {
                 new ErasedV1(e.customerId().toString(), e.requestedBy().value(), e.occurredAt());
         };
     }
+
+    record LinkRequestedV1(
+            String customerId,
+            String tenantId,
+            java.util.UUID requestId,
+            PersonalDataV1 personalData,
+            String email,
+            String phone,
+            AddressV1 address,
+            java.time.Instant expiresAt,
+            java.time.Instant occurredAt) {}
+
+    record LinkDecisionV1(
+            String customerId,
+            String tenantId,
+            java.util.UUID requestId,
+            String reason,
+            java.time.Instant occurredAt) {}
 }

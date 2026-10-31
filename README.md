@@ -38,7 +38,8 @@ flowchart LR
 | `platform` | Segurança (resource server, escopos, tenant do token), logging de fluxo, OTel, OpenAPI, `Clock` | shared |
 | `eventsourcing` | API neutra `EventStore`/`EventStreamSubscriber` sobre KurrentDB, checkpoints, propagação de trace | shared |
 | `privacy` | `PersonalDataCipher` (AES-256-GCM por titular), `BlindIndex` (HMAC), `CryptoShredder` | shared |
-| `customer` | Domínio da pessoa, comandos, projeção, consultas, eliminação. API pública: `CustomerDirectory`, `CustomerErasureCompleted` | shared, eventsourcing, privacy |
+| `customer` | Domínio da pessoa, comandos, projeção, consultas, eliminação e vínculos aprovados pelo titular. API pública: `CustomerDirectory`, `CustomerDataAccess`, `CustomerTenantUnlinked` | shared, eventsourcing, privacy, tenant |
+| `consent` | Finalidades por tenant, consentimentos event-sourced cifrados, projeção e minimização. API pública: `ConsentDirectory` | shared, eventsourcing, privacy, customer, tenant |
 | `secrets` | `SecretStore` (Vault KV v2 com cache; `local` em dev/teste) para credenciais de provedores | shared |
 | `tenant` | Webhook do tenant (URL, segredo HMAC cifrado), fila de entrega com retentativas, proteção SSRF. API pública: `TenantNotifications`, `TenantNotificationDelivered/Failed` | shared, privacy |
 | `verification` | Política de provedores por tenant, processo de validação event-sourced (com desafio OTP), gateway resiliente, incidentes, entrega do resultado | shared, eventsourcing, privacy, secrets, customer, tenant |
@@ -85,6 +86,8 @@ customer/
 | Vazamento em logs/URLs | Value objects mascaram `toString()`; logs sem argumentos; CPF buscado via `POST /search` (nunca na URL); erros não ecoam valores |
 | Menor privilégio | Token do Vault só pode `datakey`/`decrypt` da KEK e **ler** `secret/customer-account/*` (`docker/vault/customer-account-policy.hcl`) |
 | Trilha de auditoria | Toda leitura de dado pessoal gera log `audit.action=personal-data.read` com tenant e titular |
+| Consentimento e necessidade | Campos expostos = escopos OAuth2 ∩ finalidades autorizadas; sem finalidade, apenas metadados do recurso |
+| Vínculo entre tenants | CPF já cadastrado em outro tenant gera solicitação pendente, sem id ou perfil na resposta; acesso só após aprovação do titular |
 | Menores de idade | Bloqueados (art. 14 exige consentimento dos responsáveis) |
 
 ---
@@ -167,6 +170,52 @@ estado civil, nacionalidade, e-mail, celular (E.164) e endereço.
 **sensíveis** (art. 5º, II). A validação biométrica fica no provedor; guardamos apenas o veredito.
 
 ---
+
+### 5.1 Consentimentos e vínculos (fase 4b)
+
+O catálogo de finalidades é explícito: o administrador define descrição, base legal, versão da política e
+campos necessários. **Não existe finalidade implícita**, nem mesmo para o tenant que cadastrou a pessoa.
+Bases `CONTRACT`, `LEGAL_OBLIGATION`, `LEGITIMATE_INTEREST` e `CREDIT_PROTECTION` permitem os campos
+declarados no catálogo; a adequação da base legal é responsabilidade do controlador. `CONSENT` exige
+aceite para a versão atual. Alterar descrição/base/campos requer alterar `policyVersion`.
+
+Campos aceitos: `cpf`, `personalData.fullName`, `personalData.socialName`, `personalData.birthDate`,
+`personalData.motherName`, `personalData.maritalStatus`, `personalData.nationality`, `email`, `mobilePhone`,
+`address`. Escopos granulares: `customer:read:identity`, `customer:read:contact`, `customer:read:address`,
+`customer:read:full`. `customer:read` permanece como alias depreciado de `full`, **sem ignorar consentimentos**.
+Campos não autorizados são omitidos do JSON (incluindo os campos internos de `personalData`); a auditoria
+registra `audit.fields`. O titular pode consultar seu próprio perfil completo na API `me`.
+
+| Método | Caminho | Uso |
+|---|---|---|
+| `PUT` | `/api/v1/tenant/purposes/{code}` | Admin: `{description, legalBasis, fields[], policyVersion}` |
+| `GET` | `/api/v1/tenant/purposes` | Catálogo do tenant |
+| `POST` | `/api/v1/customers/{id}/consents` | `{purpose, policyVersion, evidence:{channel, sessionId, textHash}}` |
+| `GET` | `/api/v1/customers/{id}/consents` | Aceites do vínculo atual |
+| `DELETE` | `/api/v1/customers/{id}/consents/{purpose}` | `{reason}`; revogação com efeito imediato nas leituras |
+| `GET` | `/api/v1/me/links/requests` | Titular: solicitações recebidas, com sugestões de perfil |
+| `POST` | `/api/v1/me/links/requests/{requestId}/approve` ou `/reject` | Decisão autenticada pelo titular |
+| `GET` | `/api/v1/me/links/suggestions` | Sugestões dos vínculos aprovados; não sobrescrevem o perfil |
+| `DELETE` | `/api/v1/customers/{id}/link` | Tenant com `customer:write`: remove seu vínculo, não a pessoa |
+| `DELETE` | `/api/v1/me/links/{tenantId}` | Titular: remove um vínculo |
+| `GET`/`POST` | `/api/v1/me/consents/{tenantId}` | Titular: consulta/aceita; sessão vem do claim `sid` |
+| `DELETE` | `/api/v1/me/consents/{tenantId}/{purpose}` | Titular: revoga com `{reason}` |
+
+Evidência: canal `app`, `web` ou `presencial`, identificador da sessão e SHA-256 hexadecimal do texto apresentado.
+A API do tenant aceita evidência coletada por ele (inclusive presencial); não gera prova de manifestação
+por si só. O controlador deve conservar prova verificável de aceite, sem usar o endpoint para consentimento presumido.
+O livro `consent-<customerId>-<tenantId>` e a projeção `consent_views` guardam evidências cifradas pela chave do titular.
+
+`POST /customers` com CPF de outro tenant retorna **202**, exatamente `{"status":"LINK_PENDING"}`, sem
+`Location` nem identificador do cadastro existente. O titular usa seu token do tenant ao qual já pertence para
+aprovar a solicitação. Neste fluxo a confirmação é pelo login da 4a; não há novo OTP no contato informado pelo
+tenant solicitante. Solicitações expiram em **7 dias** e geram `CustomerLinkRejected`; repetição enquanto pendente
+não renova o prazo. CPF repetido no mesmo tenant continua retornando 409.
+
+Desvínculo bloqueia acesso imediatamente pelo event store, mesmo antes da projeção. Read models de
+validações e consentimentos são removidos apenas para aquele tenant. Um novo vínculo não reutiliza
+consentimentos nem resultados de validações do vínculo anterior. Outros tenants e a pessoa permanecem intactos.
+Webhooks reutilizam a fila assinada da seção 7.6: `consent.revoked`, `customer.link_approved`, `customer.unlinked`.
 
 ## 6. Autenticação do titular: passwordless + 2 fatores
 
@@ -444,7 +493,7 @@ Escopo de integrações reduzido a **Legitimuz e Netrin** (decisões em [spec/RE
 
 1. **Retenção x eliminação**: obrigações legais (ex.: PLD, 5 anos) podem exigir reter parte dos dados após o pedido de
    eliminação — definir quais e por quanto tempo (crypto-shredding pode ser agendado).
-2. **Eliminação global x por tenant**: hoje o `DELETE` elimina o titular para todos; revogação por tenant virá com o
-   módulo de consentimento.
+2. **Eliminação global x por tenant**: `DELETE /customers/{id}` elimina o titular para todos;
+   `DELETE /customers/{id}/link` remove somente o acesso do tenant, preservando a pessoa.
 3. **Celular estrangeiro e endereço fora do Brasil**: hoje só BR.
 4. **Key store em cluster separado** do read model (recomendado em produção) e política de backup alinhada ao shredding.

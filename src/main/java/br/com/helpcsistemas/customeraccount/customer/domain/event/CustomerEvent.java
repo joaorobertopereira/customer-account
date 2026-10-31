@@ -7,6 +7,10 @@ import br.com.helpcsistemas.customeraccount.shared.domain.DomainEvent;
 public sealed interface CustomerEvent extends DomainEvent
         permits CustomerRegistered,
                 CustomerLinkedToTenant,
+                CustomerLinkRequested,
+                CustomerLinkApproved,
+                CustomerLinkRejected,
+                CustomerUnlinkedFromTenant,
                 PersonalDataUpdated,
                 AddressChanged,
                 EmailChanged,

@@ -33,6 +33,43 @@ class CustomerRegistrationService implements RegisterCustomerUseCase {
     }
 
     @Override
+    public br.com.helpcsistemas.customeraccount.customer.application.port.in.RegistrationResult registerOrRequestLink(
+            RegisterCustomerCommand command) {
+        var owner = cpfRegistry.findOwner(command.cpf());
+        if (owner.isEmpty()) {
+            try {
+                return new br.com.helpcsistemas.customeraccount.customer.application.port.in.RegistrationResult(
+                        register(command), false);
+            } catch (ResourceAlreadyExistsException ex) {
+                log.atInfo()
+                        .addKeyValue("tenant.id", command.tenantId())
+                        .log("Reserva concorrente; verificando vínculo pendente");
+                owner = cpfRegistry.findOwner(command.cpf());
+                if (owner.isEmpty()) {
+                    throw ex;
+                }
+            }
+        }
+        var customer = repository
+                .findById(owner.orElseThrow())
+                .orElseThrow(() -> new br.com.helpcsistemas.customeraccount.shared.domain.ConcurrencyConflictException(
+                        "CUSTOMER_REGISTRATION_IN_PROGRESS", "Cadastro em processamento; tente novamente"));
+        customer.requestLink(
+                command.tenantId(),
+                command.personalData(),
+                command.email(),
+                command.mobilePhone(),
+                command.address(),
+                clock);
+        repository.save(customer);
+        log.atInfo()
+                .addKeyValue("audit.action", "customer.link_requested")
+                .addKeyValue("tenant.id", command.tenantId())
+                .log("Solicitação de vínculo registrada");
+        return new br.com.helpcsistemas.customeraccount.customer.application.port.in.RegistrationResult(null, true);
+    }
+
+    @Override
     @Observed(
             name = "customer.command",
             contextualName = "register-customer",

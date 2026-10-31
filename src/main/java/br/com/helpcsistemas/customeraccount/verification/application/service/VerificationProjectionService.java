@@ -30,23 +30,35 @@ class VerificationProjectionService implements ProjectVerificationEventUseCase {
     private final ProviderIncidentRepositoryPort incidents;
     private final HostedSessionRegistryPort hostedSessions;
     private final ProviderCallbackInboxPort callbackInbox;
+    private final br.com.helpcsistemas.customeraccount.customer.CustomerDirectory customers;
 
     VerificationProjectionService(
             VerificationProcessRepositoryPort processes,
             VerificationViewRepositoryPort views,
             ProviderIncidentRepositoryPort incidents,
             HostedSessionRegistryPort hostedSessions,
-            ProviderCallbackInboxPort callbackInbox) {
+            ProviderCallbackInboxPort callbackInbox,
+            br.com.helpcsistemas.customeraccount.customer.CustomerDirectory customers) {
         this.processes = processes;
         this.views = views;
         this.incidents = incidents;
         this.hostedSessions = hostedSessions;
         this.callbackInbox = callbackInbox;
+        this.customers = customers;
     }
 
     @Override
     public void project(VerificationEvent event, long revision) {
         processes.findById(event.verificationId()).ifPresent(process -> {
+            if (customers
+                    .linkedAt(process.tenantId(), process.customerId())
+                    .filter(at -> !process.requestedAt().isBefore(at))
+                    .isEmpty()) {
+                log.atInfo()
+                        .addKeyValue("verification.id", process.id())
+                        .log("Projeção recusada: vínculo removido ou renovado");
+                return;
+            }
             views.save(VerificationView.of(process));
             if (event instanceof ProviderCallFailed failed) {
                 incidents.save(incidentOf(process, failed, revision));

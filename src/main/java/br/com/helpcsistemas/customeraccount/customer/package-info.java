@@ -10,7 +10,7 @@
  */
 @ApplicationModule(
         displayName = "Customer",
-        allowedDependencies = {"shared", "eventsourcing", "privacy"})
+        allowedDependencies = {"shared", "eventsourcing", "privacy", "tenant"})
 package br.com.helpcsistemas.customeraccount.customer;
 
 import org.springframework.modulith.ApplicationModule;

@@ -3,6 +3,8 @@
 
 @baseUrl = http://localhost:8080
 @keycloak = http://localhost:8180/realms/customer-account/protocol/openid-connect/token
+@phase4SubjectToken = PREENCHA_TOKEN_OIDC_TITULAR
+@phase4RequestId = PREENCHA_REQUEST_ID
 
 ### 1) Token do Tenant A (client credentials)
 # @name tokenA
@@ -214,3 +216,72 @@ Content-Type: application/json
 ### 25) Status atual (ou use GET /api/v1/verifications/{{identity.response.body.id}} para detalhes)
 GET {{baseUrl}}/api/v1/customers/{{register.response.body.id}}/verification-status?type=IDENTITY
 Authorization: Bearer {{tokenA.response.body.access_token}}
+
+### ===================== Consentimentos e vinculos (fase 4b) =====================
+### Execute antes das consultas cadastrais: sem finalidade autorizada, o perfil pessoal fica omitido.
+PUT {{baseUrl}}/api/v1/tenant/purposes/customer-management
+Authorization: Bearer {{adminA.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "description": "Gestao contratual do cadastro",
+  "legalBasis": "CONTRACT",
+  "fields": ["cpf", "personalData.fullName", "personalData.birthDate", "email", "mobilePhone", "address"],
+  "policyVersion": "1"
+}
+
+### Novo tenant pede vinculo; resposta exatamente 202 {"status":"LINK_PENDING"}, sem id do cliente.
+POST {{baseUrl}}/api/v1/customers
+Authorization: Bearer {{tokenB.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "cpf": "52998224725",
+  "personalData": {"fullName":"Maria da Silva Souza", "birthDate":"1990-05-20", "nationality":"BR"},
+  "email": "sugestao@example.com",
+  "mobilePhone": "(11) 91234-5678"
+}
+
+### Titular autenticado no tenant ja vinculado: copie requestId para phase4RequestId.
+GET {{baseUrl}}/api/v1/me/links/requests
+Authorization: Bearer {{phase4SubjectToken}}
+
+### Aprovar (ou use /reject)
+POST {{baseUrl}}/api/v1/me/links/requests/{{phase4RequestId}}/approve
+Authorization: Bearer {{phase4SubjectToken}}
+
+### Sugestoes recebidas nao alteram automaticamente o perfil.
+GET {{baseUrl}}/api/v1/me/links/suggestions
+Authorization: Bearer {{phase4SubjectToken}}
+
+### Defina esta finalidade no tenant A; no tenant B use o token do admin B.
+PUT {{baseUrl}}/api/v1/tenant/purposes/marketing
+Authorization: Bearer {{adminA.response.body.access_token}}
+Content-Type: application/json
+
+{"description":"Contato de marketing","legalBasis":"CONSENT","fields":["email"],"policyVersion":"1"}
+
+### Titular aceita a politica; textHash deve ser SHA-256 do texto realmente apresentado.
+POST {{baseUrl}}/api/v1/me/consents/tenant-app-a
+Authorization: Bearer {{phase4SubjectToken}}
+Content-Type: application/json
+
+{
+  "purpose":"marketing", "policyVersion":"1",
+  "evidence":{"channel":"web","sessionId":"substituido-pelo-sid-do-token","textHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+}
+
+### Consultar aceites do vinculo atual
+GET {{baseUrl}}/api/v1/customers/{{register.response.body.id}}/consents
+Authorization: Bearer {{tokenA.response.body.access_token}}
+
+### Revogar: os campos exclusivos desta finalidade deixam de aparecer imediatamente.
+DELETE {{baseUrl}}/api/v1/me/consents/tenant-app-a/marketing
+Authorization: Bearer {{phase4SubjectToken}}
+Content-Type: application/json
+
+{"reason":"Revogado pelo titular"}
+
+### Desvincular apenas o tenant B, mantendo a pessoa e os demais vinculos
+DELETE {{baseUrl}}/api/v1/customers/{{register.response.body.id}}/link
+Authorization: Bearer {{tokenB.response.body.access_token}}

@@ -56,22 +56,38 @@ final class CustomerWebMapper {
     }
 
     static CustomerResponse toResponse(CustomerView view) {
+        return toResponse(view, br.com.helpcsistemas.customeraccount.shared.domain.PersonalDataFields.ALL);
+    }
+
+    static CustomerResponse toResponse(CustomerView view, java.util.Set<String> fields) {
         var data = view.personalData();
         return new CustomerResponse(
                 view.id().toString(),
                 view.version(),
                 view.status().name(),
-                view.cpf().value(),
-                new PersonalDataResponse(
-                        data.fullName().value(),
-                        data.socialName() == null ? null : data.socialName().value(),
-                        data.birthDate(),
-                        data.motherName() == null ? null : data.motherName().value(),
-                        data.maritalStatus(),
-                        data.nationality().value()),
-                new ContactResponse(view.email().value(), view.emailVerified()),
-                new ContactResponse(view.mobilePhone().value(), view.mobilePhoneVerified()),
-                toResponse(view.address()),
+                fields.contains("cpf") ? view.cpf().value() : null,
+                fields.stream().anyMatch(f -> f.startsWith("personalData."))
+                        ? new PersonalDataResponse(
+                                fields.contains("personalData.fullName")
+                                        ? data.fullName().value()
+                                        : null,
+                                fields.contains("personalData.socialName") && data.socialName() != null
+                                        ? data.socialName().value()
+                                        : null,
+                                fields.contains("personalData.birthDate") ? data.birthDate() : null,
+                                fields.contains("personalData.motherName") && data.motherName() != null
+                                        ? data.motherName().value()
+                                        : null,
+                                fields.contains("personalData.maritalStatus") ? data.maritalStatus() : null,
+                                fields.contains("personalData.nationality")
+                                        ? data.nationality().value()
+                                        : null)
+                        : null,
+                fields.contains("email") ? new ContactResponse(view.email().value(), view.emailVerified()) : null,
+                fields.contains("mobilePhone")
+                        ? new ContactResponse(view.mobilePhone().value(), view.mobilePhoneVerified())
+                        : null,
+                fields.contains("address") ? toResponse(view.address()) : null,
                 view.createdAt(),
                 view.updatedAt());
     }

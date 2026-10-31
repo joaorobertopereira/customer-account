@@ -12,6 +12,8 @@ class ModularityTests {
     @Test
     void verifiesModularStructure() {
         MODULES.verify();
+        org.assertj.core.api.Assertions.assertThat(MODULES.getModuleByName("consent"))
+                .isPresent();
     }
 
     @Test

@@ -49,9 +49,13 @@ class CustomerCommandController {
 
     @PostMapping
     @Operation(summary = "Cadastra um cliente e o vincula ao tenant")
-    ResponseEntity<RegisteredResponse> register(
+    ResponseEntity<?> register(
             @Parameter(hidden = true) TenantId tenant, @Valid @RequestBody RegisterCustomerRequest request) {
-        var id = registration.register(CustomerWebMapper.toCommand(tenant, request));
+        var result = registration.registerOrRequestLink(CustomerWebMapper.toCommand(tenant, request));
+        if (result.linkPending()) {
+            return ResponseEntity.accepted().body(java.util.Map.of("status", "LINK_PENDING"));
+        }
+        var id = result.customerId();
         return ResponseEntity.created(URI.create("/api/v1/customers/" + id))
                 .body(new RegisteredResponse(id.toString()));
     }

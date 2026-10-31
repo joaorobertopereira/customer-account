@@ -5,4 +5,6 @@ import br.com.helpcsistemas.customeraccount.customer.domain.model.CustomerId;
 public interface RegisterCustomerUseCase {
 
     CustomerId register(RegisterCustomerCommand command);
+
+    RegistrationResult registerOrRequestLink(RegisterCustomerCommand command);
 }

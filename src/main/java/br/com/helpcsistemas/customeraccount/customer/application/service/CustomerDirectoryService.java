@@ -20,6 +20,14 @@ class CustomerDirectoryService implements CustomerDirectory {
     }
 
     @Override
+    public Optional<java.time.Instant> linkedAt(TenantId tenant, UUID customerId) {
+        return repository
+                .findById(new CustomerId(customerId))
+                .filter(c -> c.status() == CustomerStatus.ACTIVE)
+                .flatMap(c -> c.linkedAt(tenant));
+    }
+
+    @Override
     public Optional<CustomerSnapshot> findLinkedCustomer(TenantId tenant, UUID customerId) {
         return repository
                 .findById(new CustomerId(customerId))

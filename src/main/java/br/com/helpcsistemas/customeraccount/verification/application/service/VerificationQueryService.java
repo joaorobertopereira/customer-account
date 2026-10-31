@@ -20,22 +20,36 @@ class VerificationQueryService implements FindVerificationUseCase {
 
     private final VerificationViewRepositoryPort views;
     private final ProviderIncidentRepositoryPort incidents;
+    private final br.com.helpcsistemas.customeraccount.customer.CustomerDirectory customers;
 
-    VerificationQueryService(VerificationViewRepositoryPort views, ProviderIncidentRepositoryPort incidents) {
+    VerificationQueryService(
+            VerificationViewRepositoryPort views,
+            ProviderIncidentRepositoryPort incidents,
+            br.com.helpcsistemas.customeraccount.customer.CustomerDirectory customers) {
         this.views = views;
         this.incidents = incidents;
+        this.customers = customers;
     }
 
     @Override
     public VerificationView findById(TenantId tenant, VerificationId id) {
         return views.findById(id)
                 .filter(v -> v.tenantId().equals(tenant))
+                .filter(v -> customers
+                        .linkedAt(tenant, v.customerId())
+                        .filter(at -> !v.requestedAt().isBefore(at))
+                        .isPresent())
                 .orElseThrow(() -> new ResourceNotFoundException("VERIFICATION_NOT_FOUND", "Validação não encontrada"));
     }
 
     @Override
     public List<VerificationView> findByCustomer(TenantId tenant, UUID customerId) {
-        return views.findByTenantAndCustomer(tenant, customerId);
+        var linkedAt = customers
+                .linkedAt(tenant, customerId)
+                .orElseThrow(() -> new ResourceNotFoundException("CUSTOMER_NOT_FOUND", "Cliente não encontrado"));
+        return views.findByTenantAndCustomer(tenant, customerId).stream()
+                .filter(v -> !v.requestedAt().isBefore(linkedAt))
+                .toList();
     }
 
     @Override

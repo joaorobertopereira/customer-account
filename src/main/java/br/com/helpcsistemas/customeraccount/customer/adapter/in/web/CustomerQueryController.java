@@ -31,14 +31,29 @@ class CustomerQueryController {
 
     @GetMapping("/{id}")
     @Operation(summary = "Consulta um cliente vinculado ao tenant")
-    CustomerResponse findById(@Parameter(hidden = true) TenantId tenant, @PathVariable String id) {
-        return CustomerWebMapper.toResponse(find.findById(tenant, CustomerId.of(id)));
+    CustomerResponse findById(
+            @Parameter(hidden = true) TenantId tenant,
+            @PathVariable String id,
+            org.springframework.security.core.Authentication authentication) {
+        var authorized = find.findReadableById(tenant, CustomerId.of(id), scopes(authentication));
+        return CustomerWebMapper.toResponse(authorized.customer(), authorized.fields());
     }
 
     @PostMapping("/search")
     @Operation(summary = "Busca cliente por CPF (CPF no corpo, nunca na URL)")
     CustomerResponse searchByCpf(
-            @Parameter(hidden = true) TenantId tenant, @Valid @RequestBody SearchByCpfRequest request) {
-        return CustomerWebMapper.toResponse(find.findByCpf(tenant, Cpf.of(request.cpf())));
+            @Parameter(hidden = true) TenantId tenant,
+            @Valid @RequestBody SearchByCpfRequest request,
+            org.springframework.security.core.Authentication authentication) {
+        var authorized = find.findReadableByCpf(tenant, Cpf.of(request.cpf()), scopes(authentication));
+        return CustomerWebMapper.toResponse(authorized.customer(), authorized.fields());
+    }
+
+    private static java.util.Set<String> scopes(org.springframework.security.core.Authentication authentication) {
+        return authentication.getAuthorities().stream()
+                .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                .filter(a -> a.startsWith("SCOPE_"))
+                .map(a -> a.substring(6))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 }
