@@ -170,17 +170,57 @@ estado civil, nacionalidade, e-mail, celular (E.164) e endereço.
 
 ## 6. Autenticação do titular: passwordless + 2 fatores
 
-Não armazenamos senhas. Proposta (fase 4, no Keycloak 26 já provisionado):
+O realm versionado de desenvolvimento habilita cadastro com verificação de e-mail e passkey WebAuthn passwordless
+(chave residente + verificação do usuário). O fluxo de browser do titular não contém autenticador de senha. Clientes
+`tenant-app-a-web` e `tenant-app-b-web` usam Authorization Code + PKCE (`S256`) e escopos `me:read`/`me:write`.
+O `customer_id` só é incluído no token após o vínculo; o backend valida o subject, tenant e cadastro ativo no
+`CustomerDirectory` em cada operação própria.
 
-1. **Fator 1 – posse**: passkey (WebAuthn/FIDO2, resident key + user verification), com fallback **OTP por e-mail
-   ou SMS/WhatsApp** (link mágico/código de uso único).
-2. **Fator 2 – inerência/conhecimento**: a própria passkey já é 2FA (dispositivo + biometria/PIN local). Para o
-   fallback OTP, segundo fator TOTP ou **step-up biométrico** (liveness no provedor) em operações sensíveis.
-3. Tenants autenticam o usuário via **OIDC Authorization Code + PKCE** no realm central (SSO entre tenants), com
-   `acr`/`amr` no token para exigir nível de garantia por operação.
+**Vínculo de acesso com cadastro já existente** (o cadastro do cliente nunca provisiona usuário no Keycloak):
 
-O realm já vem com políticas de WebAuthn passwordless e TOTP configuradas; os fluxos de autenticação serão
-versionados na fase 4.
+1. O titular autentica com token contendo `email_verified=true`; o backend usa exclusivamente esse e-mail e o
+   tenant do token para localizar um cadastro existente e revalida o candidato no event store.
+2. `POST /api/v1/me/link/otp` envia código de uso único ao e-mail armazenado no cadastro. O desafio é associado a
+   `subject`, tenant e customer, expira em 10 minutos, é armazenado como HMAC e aceita no máximo cinco tentativas.
+3. `POST /api/v1/me/link` confirma `challengeId` + código. O serviço de conta Keycloak aplica apenas o atributo
+   `customer_id` ao usuário cujo ID é o `sub` do JWT; vínculo existente não pode ser trocado. Depois, o titular
+   autentica novamente para receber o claim atualizado.
+
+Inspecione e-mail/código local em Mailpit (`http://localhost:8025`). O service account
+`customer-account-admin` tem somente `realm-management/manage-users`; em produção forneça seu segredo por secret
+manager (`KEYCLOAK_ADMIN_CLIENT_SECRET`), nunca pelo arquivo do realm.
+
+**Escopos de leitura de dados do cliente**: `customer:read:identity` (CPF e dados pessoais),
+`customer:read:contact` (e-mail e celular), `customer:read:address` e `customer:read:full`. Os três primeiros
+retornam apenas os respectivos campos; `customer:read:full` e o escopo legado `customer:read` retornam o conjunto
+completo. Nos clients de serviço, solicite o escopo necessário como opcional; não inclua CPF/dados pessoais quando
+a integração não precisar deles. `me:read` e `me:write` são separados e exigem `customer_id` válido para todas as
+rotas próprias, exceto o início/confirmação do vínculo.
+
+**Admins de tenant** usam um fluxo browser separado com senha + TOTP obrigatório (ação `CONFIGURE_TOTP`); o
+realm mapeia LoA 1/2 para `acr` `1`/`2`, e o backend exige `acr=2` em produção para `/api/v1/tenant/**`.
+`directAccessGrantsEnabled` permanece disponível apenas no realm de desenvolvimento e é desabilitado no arquivo de
+produção.
+
+### Teste manual no compose
+
+1. Inicie `docker compose up -d --build` e abra `http://localhost:8180`. No realm `customer-account`, crie/registre
+   um titular e conclua a verificação de e-mail em Mailpit. No browser, registre uma passkey para
+   `http://localhost:8180` (use HTTPS e domínio real fora do compose).
+2. Use um OIDC test client com `tenant-app-a-web`, redirect URI local autorizado e Authorization Code + PKCE
+   (`S256`). Autentique sem senha pela passkey; o token inicial não deve conter `customer_id`.
+3. Cadastre previamente o cliente pela API como Tenant A. Com o token do titular, invoque
+   `POST /api/v1/me/link/otp`, leia o código no Mailpit e confirme com `POST /api/v1/me/link`. Faça novo login e
+   confira `GET /api/v1/me`, `/api/v1/me/verifications` e `/api/v1/me/links`. Um cadastro de outro tenant não pode
+   ser localizado nem vinculado.
+4. No primeiro login dos admins seed (`admin.tenant-a`/`admin.tenant-b`, senha local `dev`), conclua configuração
+   do TOTP. Em produção, substitua hosts/redirects de exemplo por origens HTTPS, configure SMTP e mantenha
+   `TENANT_ADMIN_ACR_VALUES=2`.
+
+Para importar o realm de produção no compose, defina
+`KEYCLOAK_REALM_FILE=./docker/keycloak/realm-customer-account-prod.json`; substitua
+`https://portal.example.com` pelas origens reais e configure SMTP/RP ID no Keycloak antes de abrir o cadastro.
+`http/api.http` contém chamadas de autoatendimento e vínculo para usar com um token de titular obtido via PKCE.
 
 ---
 

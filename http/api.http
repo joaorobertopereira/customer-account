@@ -9,14 +9,14 @@
 POST {{keycloak}}
 Content-Type: application/x-www-form-urlencoded
 
-grant_type=client_credentials&client_id=tenant-app-a&client_secret=tenant-app-a-dev-secret
+grant_type=client_credentials&client_id=tenant-app-a&client_secret=tenant-app-a-dev-secret&scope=customer:read:full
 
 ### 2) Token do Tenant B
 # @name tokenB
 POST {{keycloak}}
 Content-Type: application/x-www-form-urlencoded
 
-grant_type=client_credentials&client_id=tenant-app-b&client_secret=tenant-app-b-dev-secret
+grant_type=client_credentials&client_id=tenant-app-b&client_secret=tenant-app-b-dev-secret&scope=customer:read:full
 
 ### 3) Cadastrar cliente (Tenant A)
 # @name register
@@ -214,3 +214,46 @@ Content-Type: application/json
 ### 25) Status atual (ou use GET /api/v1/verifications/{{identity.response.body.id}} para detalhes)
 GET {{baseUrl}}/api/v1/customers/{{register.response.body.id}}/verification-status?type=IDENTITY
 Authorization: Bearer {{tokenA.response.body.access_token}}
+
+### ===================== Titular (fase 4a) =====================
+
+### Obtenha este token por Authorization Code + PKCE usando tenant-app-a-web ou tenant-app-b-web.
+### Cole o access_token do login com passkey; o token inicial não deve conter customer_id.
+@subjectToken = cole-o-access-token-aqui
+
+### 26) Inicia vínculo com cadastro existente; OTP enviado ao e-mail verificado/cadastrado (Mailpit)
+POST {{baseUrl}}/api/v1/me/link/otp
+Authorization: Bearer {{subjectToken}}
+
+### 27) Confirma o vínculo e atualiza o atributo customer_id no usuário Keycloak
+POST {{baseUrl}}/api/v1/me/link
+Authorization: Bearer {{subjectToken}}
+Content-Type: application/json
+
+{ "challengeId": "id-retornado-no-passo-26", "code": "codigo-de-6-digitos" }
+
+### 28) Faça novo login via PKCE para receber o customer_id atualizado no access token
+GET {{baseUrl}}/api/v1/me
+Authorization: Bearer {{subjectToken}}
+
+### 29) Atualiza dados pessoais do próprio titular
+PUT {{baseUrl}}/api/v1/me/personal-data
+Authorization: Bearer {{subjectToken}}
+Content-Type: application/json
+
+{
+  "fullName": "Maria da Silva Souza",
+  "socialName": null,
+  "birthDate": "1990-05-20",
+  "motherName": "Ana da Silva",
+  "maritalStatus": "MARRIED",
+  "nationality": "BR"
+}
+
+### 30) Lista somente as validações do titular no tenant do token
+GET {{baseUrl}}/api/v1/me/verifications
+Authorization: Bearer {{subjectToken}}
+
+### 31) Lista os tenants atualmente vinculados ao próprio titular
+GET {{baseUrl}}/api/v1/me/links
+Authorization: Bearer {{subjectToken}}

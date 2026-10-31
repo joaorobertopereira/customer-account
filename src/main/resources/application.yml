@@ -114,6 +114,13 @@ app:
   security:
     # acr exigido para administração do tenant (MFA). Vazio = não exige (dev). Produção: 2.
     tenant-admin-acr-values: []
+    keycloak-admin:
+      base-url: ${KEYCLOAK_ADMIN_BASE_URL:http://localhost:8180}
+      realm: ${KEYCLOAK_ADMIN_REALM:customer-account}
+      client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:customer-account-admin}
+      client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:}
+  subject-link:
+    mail-from: ${SUBJECT_LINK_MAIL_FROM:no-reply@helpcsistemas.com.br}
   secrets:
     # vault (produção) | local (somente desenvolvimento/testes)
     provider: ${SECRETS_PROVIDER:vault}

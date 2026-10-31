@@ -5,11 +5,16 @@ import br.com.helpcsistemas.customeraccount.customer.adapter.in.web.CustomerResp
 import br.com.helpcsistemas.customeraccount.customer.application.port.in.FindCustomerUseCase;
 import br.com.helpcsistemas.customeraccount.customer.domain.model.Cpf;
 import br.com.helpcsistemas.customeraccount.customer.domain.model.CustomerId;
+import br.com.helpcsistemas.customeraccount.shared.domain.PersonalDataFields;
 import br.com.helpcsistemas.customeraccount.shared.domain.TenantId;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.Arrays;
+import java.util.Set;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,14 +36,24 @@ class CustomerQueryController {
 
     @GetMapping("/{id}")
     @Operation(summary = "Consulta um cliente vinculado ao tenant")
-    CustomerResponse findById(@Parameter(hidden = true) TenantId tenant, @PathVariable String id) {
-        return CustomerWebMapper.toResponse(find.findById(tenant, CustomerId.of(id)));
+    CustomerResponse findById(
+            @Parameter(hidden = true) TenantId tenant, @PathVariable String id, @AuthenticationPrincipal Jwt jwt) {
+        return CustomerWebMapper.toResponse(find.findById(tenant, CustomerId.of(id)), readFields(jwt));
     }
 
     @PostMapping("/search")
     @Operation(summary = "Busca cliente por CPF (CPF no corpo, nunca na URL)")
     CustomerResponse searchByCpf(
-            @Parameter(hidden = true) TenantId tenant, @Valid @RequestBody SearchByCpfRequest request) {
-        return CustomerWebMapper.toResponse(find.findByCpf(tenant, Cpf.of(request.cpf())));
+            @Parameter(hidden = true) TenantId tenant,
+            @Valid @RequestBody SearchByCpfRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return CustomerWebMapper.toResponse(find.findByCpf(tenant, Cpf.of(request.cpf())), readFields(jwt));
+    }
+
+    private static Set<String> readFields(Jwt jwt) {
+        var scope = jwt.getClaimAsString("scope");
+        var scopes =
+                scope == null || scope.isBlank() ? Set.<String>of() : Set.copyOf(Arrays.asList(scope.split("\\s+")));
+        return PersonalDataFields.forScopes(scopes);
     }
 }

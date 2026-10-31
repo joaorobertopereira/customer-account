@@ -17,6 +17,11 @@ app:
   security:
     # Keycloak deve emitir acr=2 quando o admin autentica com segundo fator (fluxo step-up).
     tenant-admin-acr-values: ${TENANT_ADMIN_ACR_VALUES:2}
+    keycloak-admin:
+      base-url: ${KEYCLOAK_ADMIN_BASE_URL}
+      realm: ${KEYCLOAK_ADMIN_REALM:customer-account}
+      client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:customer-account-admin}
+      client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
   secrets:
     provider: vault
     vault:

@@ -17,7 +17,9 @@ import br.com.helpcsistemas.customeraccount.customer.domain.model.Email;
 import br.com.helpcsistemas.customeraccount.customer.domain.model.MobilePhone;
 import br.com.helpcsistemas.customeraccount.customer.domain.model.PersonName;
 import br.com.helpcsistemas.customeraccount.customer.domain.model.PersonalData;
+import br.com.helpcsistemas.customeraccount.shared.domain.PersonalDataFields;
 import br.com.helpcsistemas.customeraccount.shared.domain.TenantId;
+import java.util.Set;
 
 /** Conversão HTTP ⇄ domínio. Value objects validam e normalizam (CPF, e-mail, celular, nomes). */
 final class CustomerWebMapper {
@@ -56,22 +58,34 @@ final class CustomerWebMapper {
     }
 
     static CustomerResponse toResponse(CustomerView view) {
+        return toResponse(view, PersonalDataFields.ALL);
+    }
+
+    static CustomerResponse toResponse(CustomerView view, Set<String> fields) {
         var data = view.personalData();
         return new CustomerResponse(
                 view.id().toString(),
                 view.version(),
                 view.status().name(),
-                view.cpf().value(),
-                new PersonalDataResponse(
-                        data.fullName().value(),
-                        data.socialName() == null ? null : data.socialName().value(),
-                        data.birthDate(),
-                        data.motherName() == null ? null : data.motherName().value(),
-                        data.maritalStatus(),
-                        data.nationality().value()),
-                new ContactResponse(view.email().value(), view.emailVerified()),
-                new ContactResponse(view.mobilePhone().value(), view.mobilePhoneVerified()),
-                toResponse(view.address()),
+                fields.contains("cpf") ? view.cpf().value() : null,
+                fields.contains("personalData.fullName")
+                        ? new PersonalDataResponse(
+                                data.fullName().value(),
+                                data.socialName() == null
+                                        ? null
+                                        : data.socialName().value(),
+                                data.birthDate(),
+                                data.motherName() == null
+                                        ? null
+                                        : data.motherName().value(),
+                                data.maritalStatus(),
+                                data.nationality().value())
+                        : null,
+                fields.contains("email") ? new ContactResponse(view.email().value(), view.emailVerified()) : null,
+                fields.contains("mobilePhone")
+                        ? new ContactResponse(view.mobilePhone().value(), view.mobilePhoneVerified())
+                        : null,
+                fields.contains("address") ? toResponse(view.address()) : null,
                 view.createdAt(),
                 view.updatedAt());
     }
