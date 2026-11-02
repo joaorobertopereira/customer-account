@@ -17,7 +17,9 @@ import br.com.helpcsistemas.customeraccount.customer.domain.model.Email;
 import br.com.helpcsistemas.customeraccount.customer.domain.model.MobilePhone;
 import br.com.helpcsistemas.customeraccount.customer.domain.model.PersonName;
 import br.com.helpcsistemas.customeraccount.customer.domain.model.PersonalData;
+import br.com.helpcsistemas.customeraccount.shared.domain.PersonalDataFields;
 import br.com.helpcsistemas.customeraccount.shared.domain.TenantId;
+import java.util.Set;
 
 /** Conversão HTTP ⇄ domínio. Value objects validam e normalizam (CPF, e-mail, celular, nomes). */
 final class CustomerWebMapper {
@@ -56,17 +58,17 @@ final class CustomerWebMapper {
     }
 
     static CustomerResponse toResponse(CustomerView view) {
-        return toResponse(view, br.com.helpcsistemas.customeraccount.shared.domain.PersonalDataFields.ALL);
+        return toResponse(view, PersonalDataFields.ALL);
     }
 
-    static CustomerResponse toResponse(CustomerView view, java.util.Set<String> fields) {
+    static CustomerResponse toResponse(CustomerView view, Set<String> fields) {
         var data = view.personalData();
         return new CustomerResponse(
                 view.id().toString(),
                 view.version(),
                 view.status().name(),
                 fields.contains("cpf") ? view.cpf().value() : null,
-                fields.stream().anyMatch(f -> f.startsWith("personalData."))
+                fields.stream().anyMatch(field -> field.startsWith("personalData."))
                         ? new PersonalDataResponse(
                                 fields.contains("personalData.fullName")
                                         ? data.fullName().value()

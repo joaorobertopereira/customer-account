@@ -10,6 +10,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,9 +36,7 @@ class CustomerQueryController {
     @GetMapping("/{id}")
     @Operation(summary = "Consulta um cliente vinculado ao tenant")
     CustomerResponse findById(
-            @Parameter(hidden = true) TenantId tenant,
-            @PathVariable String id,
-            org.springframework.security.core.Authentication authentication) {
+            @Parameter(hidden = true) TenantId tenant, @PathVariable String id, Authentication authentication) {
         var authorized = find.findReadableById(tenant, CustomerId.of(id), scopes(authentication));
         return CustomerWebMapper.toResponse(authorized.customer(), authorized.fields());
     }
@@ -44,16 +46,16 @@ class CustomerQueryController {
     CustomerResponse searchByCpf(
             @Parameter(hidden = true) TenantId tenant,
             @Valid @RequestBody SearchByCpfRequest request,
-            org.springframework.security.core.Authentication authentication) {
+            Authentication authentication) {
         var authorized = find.findReadableByCpf(tenant, Cpf.of(request.cpf()), scopes(authentication));
         return CustomerWebMapper.toResponse(authorized.customer(), authorized.fields());
     }
 
-    private static java.util.Set<String> scopes(org.springframework.security.core.Authentication authentication) {
+    private static Set<String> scopes(Authentication authentication) {
         return authentication.getAuthorities().stream()
-                .map(org.springframework.security.core.GrantedAuthority::getAuthority)
-                .filter(a -> a.startsWith("SCOPE_"))
-                .map(a -> a.substring(6))
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+                .map(GrantedAuthority::getAuthority)
+                .filter(authority -> authority.startsWith("SCOPE_"))
+                .map(authority -> authority.substring("SCOPE_".length()))
+                .collect(Collectors.toUnmodifiableSet());
     }
 }

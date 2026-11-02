@@ -86,7 +86,9 @@ abstract class IntegrationTestSupport {
         var authorities = Arrays.stream(scopes)
                 .map(scope -> (GrantedAuthority) new SimpleGrantedAuthority("SCOPE_" + scope))
                 .toList();
-        return jwt().jwt(token -> token.claim("tenant_id", tenantId).claim("azp", tenantId))
+        return jwt().jwt(token -> token.claim("tenant_id", tenantId)
+                        .claim("azp", tenantId)
+                        .claim("scope", String.join(" ", scopes)))
                 .authorities(authorities);
     }
 

@@ -25,7 +25,7 @@ Hoje o cadastro com CPF existente vincula direto (`CustomerLinkedToTenant`). Pas
 
 1. `POST /api/v1/customers` com CPF existente → `CustomerLinkRequested(tenant)` → **202** `{status: LINK_PENDING}`
    sem devolver nenhum dado do cadastro existente (nem confirmar existência além do status).
-2. Titular confirma por OTP no e-mail/celular **já cadastrado** (reuso de `own-email-otp`) ou pelo login da 4a →
+2. Titular confirma pelo login/vínculo autenticado da 4a →
    `CustomerLinkApproved` + `CustomerLinkedToTenant`. Recusa/expiração (7 dias) → `CustomerLinkRejected`.
 3. Dados informados pelo novo tenant que diferem do cadastro viram **sugestão de atualização** (não sobrescrevem).
 
@@ -41,12 +41,12 @@ perde acesso e suas validações/consentimentos são removidos do read model; a 
 
 ## 5. Tarefas
 
-- [ ] T1 Módulo `consent`: domínio, codec, repositório, projeção, APIs, testes.
-- [ ] T2 Fluxo de vínculo com aprovação do titular (customer + verification OTP) e desvínculo.
-- [ ] T3 Filtro de campos por escopo/finalidade no `CustomerQueryService` + mapper.
-- [ ] T4 Webhooks `consent.revoked`, `customer.link_approved`, `customer.unlinked`.
-- [ ] T5 ITs: vínculo pendente não vaza dados; aprovação libera; desvínculo remove acesso; revogação de consentimento reduz campos; isolamento.
-- [ ] T6 README seções 2 e 5, ModularityTests (novo módulo), `http/api.http`.
+- [x] T1 Módulo `consent`: domínio, codec cifrado, repositório, projeção, APIs, testes.
+- [x] T2 Fluxo de vínculo com aprovação do titular autenticado na 4a e desvínculo isolado por tenant.
+- [x] T3 Filtro de campos pela interseção de escopos e finalidades/bases legais no `CustomerQueryService` + mapper.
+- [x] T4 Webhooks `consent.revoked`, `customer.link_approved`, `customer.unlinked`.
+- [x] T5 ITs: vínculo pendente não vaza dados; aprovação libera; desvínculo bloqueia acesso e limpa projeções; revogação reduz campos; re-vínculo não herda consentimentos/validações; isolamento entre tenants.
+- [x] T6 README seções 2 e 5, ModularityTests (novo módulo), `http/api.http`.
 
 ## 6. Pronto quando
 

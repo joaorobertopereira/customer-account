@@ -4,7 +4,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+/** Catálogo canônico dos campos pessoais expostos por escopo de leitura. */
 public final class PersonalDataFields {
+
     private PersonalDataFields() {}
 
     public static final Set<String> IDENTITY = Set.of(
