@@ -39,7 +39,7 @@ Rotas `/api/v1/me/requests` (token do titular, fase 4a). Agregado `DataSubjectRe
 
 ## 5. Tarefas
 
-- [ ] T1 Kafka no compose + Testcontainers + config (`spring.kafka.*`).
+- [x] T1 Kafka KRaft no compose, UI opcional `debug`, Testcontainers compartilhado e configuração de producer idempotente; perfil de produção usa SASL/SCRAM sobre TLS.
 - [ ] T2 Módulo `integration`: mapeadores, publisher com checkpoint pós-ack, tópicos por tenant, schemas + testes de contrato.
 - [ ] T3 Consumidor de comandos de tenant + DLQ.
 - [ ] T4 `DataSubjectRequest` + rotas `/api/v1/me/requests` + export.

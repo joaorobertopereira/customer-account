@@ -11,6 +11,9 @@ lendo apenas [00-contexto-atual.md](00-contexto-atual.md) + o arquivo da fase.
 | 2a – Política de provedores por tenant, processo de validação, contingência | ✅ concluída |
 | 2b – Segredos (Vault KV), OTP próprio, Twilio, ZeroBounce, webhook assinado ao tenant | ✅ concluída |
 | 3a – Base genérica de validação hospedada | ✅ implementada e testada; adapter real depende dos contratos da Legitimuz/Netrin |
+| 4a – Autenticação passwordless do titular e MFA de admins | ✅ implementada; validação manual de passkey pendente |
+| 4b – Consentimento, vínculo e minimização | ✅ implementada |
+| 5 – Integração Kafka e portal do titular | 🚧 iniciada: infraestrutura Kafka (T1) |
 
 ## Pendentes
 
@@ -22,7 +25,8 @@ lendo apenas [00-contexto-atual.md](00-contexto-atual.md) + o arquivo da fase.
 | [fase-5-integracao-kafka-portal.md](fase-5-integracao-kafka-portal.md) | 5 | — | Kafka no compose, publicação de eventos para tenants, portal do titular (art. 18) |
 | [fase-t-transversal.md](fase-t-transversal.md) | T | — | Idempotência, rate limit, DLQ, snapshots, upcasters, rotação de KEK, auditoria imutável |
 
-Ordem sugerida: **3b → 4a → 4b → 5**, com itens de **T** intercalados conforme necessidade. A spec da 3a permanece
+Ordem sugerida: **3b → 4a → 4b → 5**, com itens de **T** intercalados conforme necessidade. A fase 5 já iniciou pela
+infraestrutura Kafka; eventos de integração, comandos e portal permanecem pendentes. A spec da 3a permanece
 como contrato para quando chegarem os detalhes de integração real.
 
 ## Decisões registradas (2026-10-30)

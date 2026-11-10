@@ -13,6 +13,13 @@ management:
         enabled: true
         step: 30s
 
+spring:
+  kafka:
+    properties:
+      security.protocol: ${KAFKA_SECURITY_PROTOCOL:SASL_SSL}
+      sasl.mechanism: ${KAFKA_SASL_MECHANISM:SCRAM-SHA-512}
+      sasl.jaas.config: ${KAFKA_SASL_JAAS_CONFIG}
+
 app:
   security:
     # Keycloak deve emitir acr=2 quando o admin autentica com segundo fator (fluxo step-up).
