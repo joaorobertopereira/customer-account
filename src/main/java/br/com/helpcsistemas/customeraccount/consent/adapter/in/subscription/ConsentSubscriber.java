@@ -45,6 +45,16 @@ class ConsentSubscriber implements EventStreamSubscriber {
     }
 
     @Override
+    public boolean rebuildable() {
+        return true;
+    }
+
+    @Override
+    public void resetProjection() {
+        views.clear();
+    }
+
+    @Override
     public String streamPrefix() {
         return "consent-";
     }

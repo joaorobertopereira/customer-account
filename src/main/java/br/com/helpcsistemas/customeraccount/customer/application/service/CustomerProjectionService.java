@@ -49,6 +49,12 @@ class CustomerProjectionService implements ProjectCustomerEventUseCase {
         }
     }
 
+    @Override
+    public void reset() {
+        views.deleteAll();
+        log.atWarn().log("Read model de clientes descartado para reconstrução");
+    }
+
     private void create(CustomerRegistered e, long revision) {
         if (views.findById(e.customerId()).isPresent()) {
             skipped(e, revision);

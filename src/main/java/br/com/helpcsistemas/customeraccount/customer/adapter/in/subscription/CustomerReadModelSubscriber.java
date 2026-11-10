@@ -32,6 +32,16 @@ class CustomerReadModelSubscriber implements EventStreamSubscriber {
     }
 
     @Override
+    public boolean rebuildable() {
+        return true;
+    }
+
+    @Override
+    public void resetProjection() {
+        projection.reset();
+    }
+
+    @Override
     public String streamPrefix() {
         return CustomerEventCodec.STREAM_PREFIX;
     }

@@ -119,6 +119,11 @@ class MongoCustomerViewRepositoryAdapter implements CustomerViewRepositoryPort {
         mongo.remove(Query.query(Criteria.where("_id").is(id.toString())), COLLECTION);
     }
 
+    @Override
+    public void deleteAll() {
+        mongo.remove(new Query(), COLLECTION);
+    }
+
     private CustomerDocument toDocument(CustomerView view) {
         var subject = view.id().toString();
         var profile = new ProfileV1(

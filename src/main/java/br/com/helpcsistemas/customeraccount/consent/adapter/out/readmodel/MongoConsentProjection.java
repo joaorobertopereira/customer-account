@@ -61,6 +61,11 @@ class MongoConsentProjection implements ConsentProjection {
     }
 
     @Override
+    public void clear() {
+        mongo.remove(new Query(), COLLECTION);
+    }
+
+    @Override
     public void erase(UUID customer) {
         mongo.remove(Query.query(Criteria.where("customerId").is(customer.toString())), COLLECTION);
     }

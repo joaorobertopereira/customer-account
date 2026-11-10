@@ -92,6 +92,11 @@ class MongoVerificationViewRepository implements VerificationViewRepositoryPort 
     }
 
     @Override
+    public void deleteAll() {
+        mongo.remove(new Query(), COLLECTION);
+    }
+
+    @Override
     public void deleteByCustomer(UUID customerId) {
         mongo.remove(Query.query(Criteria.where("customerId").is(customerId.toString())), COLLECTION);
     }
