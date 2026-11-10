@@ -31,10 +31,7 @@ class EventStoreCustomerRepositoryAdapter implements CustomerRepositoryPort {
     private final PersonalDataCipher cipher;
 
     EventStoreCustomerRepositoryAdapter(
-            EventStore eventStore,
-            CustomerEventCodec codec,
-            AggregateSnapshots snapshots,
-            PersonalDataCipher cipher) {
+            EventStore eventStore, CustomerEventCodec codec, AggregateSnapshots snapshots, PersonalDataCipher cipher) {
         this.eventStore = eventStore;
         this.codec = codec;
         this.snapshots = snapshots;

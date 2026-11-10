@@ -74,10 +74,7 @@ public class AggregateSnapshots {
     }
 
     private <E extends DomainEvent, A extends EventSourcedAggregate<E>> Optional<A> restore(
-            String stream,
-            Class<A> type,
-            BiFunction<String, byte[], byte[]> opener,
-            Function<StoredEvent, E> decoder) {
+            String stream, Class<A> type, BiFunction<String, byte[], byte[]> opener, Function<StoredEvent, E> decoder) {
         var snapshot = store.load(stream);
         if (snapshot.isEmpty() || snapshot.get().schemaVersion() != SCHEMA_VERSION) {
             return Optional.empty();

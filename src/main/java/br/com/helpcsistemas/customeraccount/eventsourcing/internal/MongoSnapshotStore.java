@@ -42,7 +42,8 @@ class MongoSnapshotStore implements SnapshotStore {
 
     @Override
     public void save(Snapshot snapshot) {
-        var query = Query.query(Criteria.where("_id").is(snapshot.stream()).and("revision").lt(snapshot.revision()));
+        var query = Query.query(
+                Criteria.where("_id").is(snapshot.stream()).and("revision").lt(snapshot.revision()));
         var update = new Update()
                 .set("revision", snapshot.revision())
                 .set("schemaVersion", snapshot.schemaVersion())

@@ -19,13 +19,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -93,7 +93,8 @@ class MongoCustomerViewRepositoryAdapter implements CustomerViewRepositoryPort {
      * uma mais nova (o filtro falha e o upsert esbarra na chave duplicada, que é ignorada).
      */
     private void upsertIfNewer(CustomerDocument doc) {
-        var query = Query.query(Criteria.where("_id").is(doc.id()).and("version").lt(doc.version()));
+        var query =
+                Query.query(Criteria.where("_id").is(doc.id()).and("version").lt(doc.version()));
         var update = new Update()
                 .set("version", doc.version())
                 .set("status", doc.status())

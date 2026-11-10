@@ -51,7 +51,9 @@ class AggregateSnapshotsTest {
 
         @Override
         public List<StoredEvent> readStream(String stream, long fromRevision) {
-            return readStream(stream).stream().filter(e -> e.revision() >= fromRevision).toList();
+            return readStream(stream).stream()
+                    .filter(e -> e.revision() >= fromRevision)
+                    .toList();
         }
 
         @Override
@@ -65,7 +67,8 @@ class AggregateSnapshotsTest {
     private StoredEvent stored(String stream, long revision, CustomerEvent event) {
         var id = UUID.randomUUID();
         decoded.put(id, event);
-        return new StoredEvent(stream, revision, id, event.getClass().getSimpleName(), new byte[0], Map.of(), Instant.now());
+        return new StoredEvent(
+                stream, revision, id, event.getClass().getSimpleName(), new byte[0], Map.of(), Instant.now());
     }
 
     @Test
@@ -91,7 +94,10 @@ class AggregateSnapshotsTest {
     void customerRestoredFromSnapshotPlusTailEqualsFullReplay() {
         var id = CustomerId.newId();
         var customer = CustomerFixtures.persistedCustomer(id);
-        customer.changeEmail(TENANT_A, new br.com.helpcsistemas.customeraccount.customer.domain.model.Email("novo@example.com"), CLOCK);
+        customer.changeEmail(
+                TENANT_A,
+                new br.com.helpcsistemas.customeraccount.customer.domain.model.Email("novo@example.com"),
+                CLOCK);
         var history = new ArrayList<>(customer.pendingEvents());
         customer.markCommitted(history.size() - 1);
         var stream = "customer-" + id;
