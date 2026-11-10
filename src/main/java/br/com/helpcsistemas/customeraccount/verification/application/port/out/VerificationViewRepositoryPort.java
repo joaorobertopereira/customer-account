@@ -18,6 +18,8 @@ public interface VerificationViewRepositoryPort {
 
     void deleteByCustomer(UUID customerId);
 
+    void deleteByTenantAndCustomer(TenantId tenant, UUID customerId, Instant removedAt);
+
     /** Validações aguardando confirmação cujo prazo já venceu (candidatas à expiração). */
     List<VerificationId> findAwaitingExpiredBefore(Instant instant, int limit);
 

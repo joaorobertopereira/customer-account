@@ -43,14 +43,15 @@ celular): exige `customer_verification_status[IDENTITY] = VALID` e concluída h�
 
 ## 6. Tarefas
 
-- [ ] T1 Realm: fluxos passwordless/LoA, clients `-web`, mappers, scopes `me:*`, realm de dev x produção (dois arquivos).
-- [ ] T2 Vínculo usuário ↔ cliente (endpoint `POST /api/v1/me/link` com OTP do e-mail cadastrado) + service account.
-- [ ] T3 Principal do titular, rotas `/api/v1/me/**`, checagem de vínculo com o tenant.
-- [ ] T4 Step-up (opcional).
-- [ ] T5 Testes: unit do conversor/principal; ITs com JWT mock (titular vinculado, não vinculado, outro tenant, `acr`); validação manual no compose com passkey (documentar passo a passo).
-- [ ] T6 README seção 6 + `http/api.http`.
+- [x] T1 Realm: fluxos passwordless/LoA, clients `-web`, mappers, scopes `me:*`, realm de dev e produção.
+- [x] T2 Vínculo usuário ↔ cliente (`POST /api/v1/me/link` com OTP enviado ao e-mail verificado e cadastrado) + service account mínimo.
+- [x] T3 Principal do titular, rotas `/api/v1/me/**`, checagem de vínculo com o tenant.
+- [ ] T4 Step-up biométrico (opcional; não implementado nesta entrega).
+- [x] T5 Testes automatizados do conversor/principal, vínculo, scopes granulares, MFA/`acr` e isolamento; passo a passo manual no compose documentado em README.
+- [ ] T5b Validação interativa de cadastro/login com passkey no navegador (não executada).
+- [x] T6 README seção 6 + `http/api.http`.
 
 ## 7. Pronto quando
 
-Login sem senha funcionando no compose (passkey do navegador), admin sem segundo fator bloqueado com
-`acr` exigido, `mvn clean verify` verde.
+Fluxos e realms versionados, APIs de titular protegidas, admins exigem TOTP/`acr=2` em produção e
+`mvn clean verify` verde. A prova manual do login interativo por passkey no navegador permanece pendente.

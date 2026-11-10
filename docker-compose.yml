@@ -26,6 +26,9 @@ services:
       # OTP por e-mail próprio: Mailpit captura as mensagens (UI em http://localhost:8025).
       MAIL_HOST: mailpit
       MAIL_PORT: 1025
+      KEYCLOAK_ADMIN_BASE_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN_CLIENT_ID: customer-account-admin
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-customer-account-admin-dev-secret}
     extra_hosts:
       # Permite cadastrar webhooks de teste apontando para a máquina host.
       - "host.docker.internal:host-gateway"
@@ -126,7 +129,7 @@ services:
     ports:
       - "${KEYCLOAK_PORT:-8180}:8080"
     volumes:
-      - ./docker/keycloak/realm-customer-account.json:/opt/keycloak/data/import/realm-customer-account.json:ro
+      - ${KEYCLOAK_REALM_FILE:-./docker/keycloak/realm-customer-account.json}:/opt/keycloak/data/import/realm-customer-account.json:ro
     healthcheck:
       test:
         - CMD

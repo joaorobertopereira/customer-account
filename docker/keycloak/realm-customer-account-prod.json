@@ -1,0 +1,835 @@
+{
+    "realm":  "customer-account",
+    "displayName":  "Customer Account",
+    "enabled":  true,
+    "sslRequired":  "all",
+    "registrationAllowed":  true,
+    "verifyEmail":  true,
+    "loginWithEmailAllowed":  true,
+    "resetPasswordAllowed":  true,
+    "browserFlow":  "passwordless-browser",
+    "registrationFlow":  "passwordless-registration",
+    "attributes":  {
+                       "acr.loa.map":  "{\"1\":1,\"2\":2}"
+                   },
+    "smtpServer":  {
+
+                   },
+    "bruteForceProtected":  true,
+    "accessTokenLifespan":  300,
+    "otpPolicyType":  "totp",
+    "otpPolicyAlgorithm":  "HmacSHA256",
+    "otpPolicyDigits":  6,
+    "otpPolicyPeriod":  30,
+    "webAuthnPolicyPasswordlessRpEntityName":  "customer-account",
+    "webAuthnPolicyPasswordlessUserVerificationRequirement":  "required",
+    "webAuthnPolicyPasswordlessRequireResidentKey":  "Yes",
+    "requiredActions":  [
+                            {
+                                "alias":  "VERIFY_EMAIL",
+                                "name":  "Verify Email",
+                                "providerId":  "VERIFY_EMAIL",
+                                "enabled":  true,
+                                "defaultAction":  false
+                            },
+                            {
+                                "alias":  "webauthn-register-passwordless",
+                                "name":  "Register Passwordless Passkey",
+                                "providerId":  "webauthn-register-passwordless",
+                                "enabled":  true,
+                                "defaultAction":  true
+                            },
+                            {
+                                "alias":  "CONFIGURE_TOTP",
+                                "name":  "Configure OTP",
+                                "providerId":  "CONFIGURE_TOTP",
+                                "enabled":  true,
+                                "defaultAction":  false
+                            }
+                        ],
+    "authenticationFlows":  [
+                                {
+                                    "id":  "passwordless-browser-v1",
+                                    "alias":  "passwordless-browser",
+                                    "description":  "AutenticaÃ§Ã£o do titular exclusivamente com passkey WebAuthn passwordless",
+                                    "providerId":  "basic-flow",
+                                    "topLevel":  true,
+                                    "builtIn":  false,
+                                    "authenticationExecutions":  [
+                                                                     {
+                                                                         "authenticator":  "auth-cookie",
+                                                                         "authenticatorFlow":  false,
+                                                                         "requirement":  "ALTERNATIVE",
+                                                                         "priority":  10,
+                                                                         "userSetupAllowed":  false
+                                                                     },
+                                                                     {
+                                                                         "authenticator":  "auth-webauthn-passwordless",
+                                                                         "authenticatorFlow":  false,
+                                                                         "requirement":  "REQUIRED",
+                                                                         "priority":  20,
+                                                                         "userSetupAllowed":  false
+                                                                     }
+                                                                 ]
+                                },
+                                {
+                                    "id":  "passwordless-registration-v1",
+                                    "alias":  "passwordless-registration",
+                                    "description":  "Cadastro sem etapa de senha; verificaÃ§Ã£o de e-mail e passkey como aÃ§Ã£o obrigatÃ³ria",
+                                    "providerId":  "basic-flow",
+                                    "topLevel":  true,
+                                    "builtIn":  false,
+                                    "authenticationExecutions":  [
+                                                                     {
+                                                                         "authenticator":  "registration-user-creation",
+                                                                         "authenticatorFlow":  false,
+                                                                         "requirement":  "REQUIRED",
+                                                                         "priority":  10,
+                                                                         "userSetupAllowed":  false
+                                                                     },
+                                                                     {
+                                                                         "authenticator":  "registration-profile-action",
+                                                                         "authenticatorFlow":  false,
+                                                                         "requirement":  "REQUIRED",
+                                                                         "priority":  20,
+                                                                         "userSetupAllowed":  false
+                                                                     }
+                                                                 ]
+                                },
+                                {
+                                    "id":  "tenant-admin-browser-v1",
+                                    "alias":  "tenant-admin-browser",
+                                    "description":  "AutenticaÃ§Ã£o de admin com senha e TOTP em LoA 2",
+                                    "providerId":  "basic-flow",
+                                    "topLevel":  true,
+                                    "builtIn":  false,
+                                    "authenticationExecutions":  [
+                                                                     {
+                                                                         "authenticator":  "auth-cookie",
+                                                                         "authenticatorFlow":  false,
+                                                                         "requirement":  "ALTERNATIVE",
+                                                                         "priority":  10,
+                                                                         "userSetupAllowed":  false
+                                                                     },
+                                                                     {
+                                                                         "authenticator":  null,
+                                                                         "authenticatorFlow":  true,
+                                                                         "requirement":  "CONDITIONAL",
+                                                                         "priority":  20,
+                                                                         "userSetupAllowed":  false,
+                                                                         "flowAlias":  "tenant-admin-level1"
+                                                                     },
+                                                                     {
+                                                                         "authenticator":  null,
+                                                                         "authenticatorFlow":  true,
+                                                                         "requirement":  "CONDITIONAL",
+                                                                         "priority":  30,
+                                                                         "userSetupAllowed":  false,
+                                                                         "flowAlias":  "tenant-admin-level2"
+                                                                     }
+                                                                 ]
+                                },
+                                {
+                                    "id":  "tenant-admin-level1-v1",
+                                    "alias":  "tenant-admin-level1",
+                                    "description":  "Tenant administrator first factor",
+                                    "providerId":  "basic-flow",
+                                    "topLevel":  false,
+                                    "builtIn":  false,
+                                    "authenticationExecutions":  [
+                                                                     {
+                                                                         "authenticator":  "conditional-level-of-authentication",
+                                                                         "authenticatorFlow":  false,
+                                                                         "requirement":  "REQUIRED",
+                                                                         "priority":  10,
+                                                                         "userSetupAllowed":  false,
+                                                                         "authenticatorConfig":  "tenant-admin-loa1"
+                                                                     },
+                                                                     {
+                                                                         "authenticator":  "auth-username-password-form",
+                                                                         "authenticatorFlow":  false,
+                                                                         "requirement":  "REQUIRED",
+                                                                         "priority":  20,
+                                                                         "userSetupAllowed":  false
+                                                                     }
+                                                                 ]
+                                },
+                                {
+                                    "id":  "tenant-admin-level2-v1",
+                                    "alias":  "tenant-admin-level2",
+                                    "description":  "LoA 2 step-up for tenant administrators using TOTP or WebAuthn",
+                                    "providerId":  "basic-flow",
+                                    "topLevel":  false,
+                                    "builtIn":  false,
+                                    "authenticationExecutions":  [
+                                                                     {
+                                                                         "authenticator":  "conditional-level-of-authentication",
+                                                                         "authenticatorFlow":  false,
+                                                                         "requirement":  "REQUIRED",
+                                                                         "priority":  10,
+                                                                         "userSetupAllowed":  false,
+                                                                         "authenticatorConfig":  "tenant-admin-loa2"
+                                                                     },
+                                                                     {
+                                                                         "authenticator":  "auth-otp-form",
+                                                                         "authenticatorFlow":  false,
+                                                                         "requirement":  "ALTERNATIVE",
+                                                                         "priority":  20,
+                                                                         "userSetupAllowed":  true
+                                                                     },
+                                                                     {
+                                                                         "authenticator":  "webauthn-authenticator",
+                                                                         "authenticatorFlow":  false,
+                                                                         "requirement":  "ALTERNATIVE",
+                                                                         "priority":  30,
+                                                                         "userSetupAllowed":  true
+                                                                     }
+                                                                 ]
+                                }
+                            ],
+    "authenticatorConfig":  [
+                                {
+                                    "alias":  "tenant-admin-loa1",
+                                    "config":  {
+                                                   "loa-condition-level":  "1",
+                                                   "loa-max-age":  "0"
+                                               }
+                                },
+                                {
+                                    "alias":  "tenant-admin-loa2",
+                                    "config":  {
+                                                   "loa-condition-level":  "2",
+                                                   "loa-max-age":  "0"
+                                               }
+                                }
+                            ],
+    "roles":  {
+                  "realm":  [
+                                {
+                                    "name":  "admin",
+                                    "description":  "OperaÃ§Ã£o/actuator do customer-account"
+                                }
+                            ],
+                  "client":  {
+                                 "tenant-app-a-admin":  [
+                                                            {
+                                                                "name":  "tenant-admin",
+                                                                "description":  "Administra configuraÃ§Ãµes do Tenant A"
+                                                            }
+                                                        ],
+                                 "tenant-app-b-admin":  [
+                                                            {
+                                                                "name":  "tenant-admin",
+                                                                "description":  "Administra configuraÃ§Ãµes do Tenant B"
+                                                            }
+                                                        ]
+                             }
+              },
+    "clientScopes":  [
+                         {
+                             "name":  "basic",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "false",
+                                                "display.on.consent.screen":  "false"
+                                            },
+                             "protocolMappers":  [
+                                                     {
+                                                         "name":  "sub",
+                                                         "protocol":  "openid-connect",
+                                                         "protocolMapper":  "oidc-sub-mapper",
+                                                         "config":  {
+                                                                        "access.token.claim":  "true",
+                                                                        "introspection.token.claim":  "true"
+                                                                    }
+                                                     },
+                                                     {
+                                                         "name":  "username",
+                                                         "protocol":  "openid-connect",
+                                                         "protocolMapper":  "oidc-usermodel-property-mapper",
+                                                         "config":  {
+                                                                        "user.attribute":  "username",
+                                                                        "claim.name":  "preferred_username",
+                                                                        "jsonType.label":  "String",
+                                                                        "access.token.claim":  "true",
+                                                                        "id.token.claim":  "true",
+                                                                        "introspection.token.claim":  "true",
+                                                                        "userinfo.token.claim":  "true"
+                                                                    }
+                                                     }
+                                                 ]
+                         },
+                         {
+                             "name":  "roles",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "false",
+                                                "display.on.consent.screen":  "false"
+                                            },
+                             "protocolMappers":  [
+                                                     {
+                                                         "name":  "realm roles",
+                                                         "protocol":  "openid-connect",
+                                                         "protocolMapper":  "oidc-usermodel-realm-role-mapper",
+                                                         "config":  {
+                                                                        "claim.name":  "realm_access.roles",
+                                                                        "jsonType.label":  "String",
+                                                                        "multivalued":  "true",
+                                                                        "access.token.claim":  "true",
+                                                                        "id.token.claim":  "false",
+                                                                        "introspection.token.claim":  "true",
+                                                                        "userinfo.token.claim":  "false"
+                                                                    }
+                                                     },
+                                                     {
+                                                         "name":  "client roles",
+                                                         "protocol":  "openid-connect",
+                                                         "protocolMapper":  "oidc-usermodel-client-role-mapper",
+                                                         "config":  {
+                                                                        "claim.name":  "resource_access.${client_id}.roles",
+                                                                        "jsonType.label":  "String",
+                                                                        "multivalued":  "true",
+                                                                        "access.token.claim":  "true",
+                                                                        "id.token.claim":  "false",
+                                                                        "introspection.token.claim":  "true",
+                                                                        "userinfo.token.claim":  "false"
+                                                                    }
+                                                     }
+                                                 ]
+                         },
+                         {
+                             "name":  "profile",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            },
+                             "protocolMappers":  [
+                                                     {
+                                                         "name":  "preferred_username",
+                                                         "protocol":  "openid-connect",
+                                                         "protocolMapper":  "oidc-usermodel-property-mapper",
+                                                         "config":  {
+                                                                        "user.attribute":  "username",
+                                                                        "claim.name":  "preferred_username",
+                                                                        "jsonType.label":  "String",
+                                                                        "access.token.claim":  "true",
+                                                                        "id.token.claim":  "true",
+                                                                        "userinfo.token.claim":  "true"
+                                                                    }
+                                                     }
+                                                 ]
+                         },
+                         {
+                             "name":  "email",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            },
+                             "protocolMappers":  [
+                                                     {
+                                                         "name":  "email",
+                                                         "protocol":  "openid-connect",
+                                                         "protocolMapper":  "oidc-usermodel-property-mapper",
+                                                         "config":  {
+                                                                        "user.attribute":  "email",
+                                                                        "claim.name":  "email",
+                                                                        "jsonType.label":  "String",
+                                                                        "access.token.claim":  "true",
+                                                                        "id.token.claim":  "true",
+                                                                        "userinfo.token.claim":  "true"
+                                                                    }
+                                                     },
+                                                     {
+                                                         "name":  "email verified",
+                                                         "protocol":  "openid-connect",
+                                                         "protocolMapper":  "oidc-usermodel-property-mapper",
+                                                         "config":  {
+                                                                        "user.attribute":  "emailVerified",
+                                                                        "claim.name":  "email_verified",
+                                                                        "jsonType.label":  "boolean",
+                                                                        "access.token.claim":  "true",
+                                                                        "id.token.claim":  "true",
+                                                                        "userinfo.token.claim":  "true"
+                                                                    }
+                                                     }
+                                                 ]
+                         },
+                         {
+                             "name":  "customer-account-audience",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "false",
+                                                "display.on.consent.screen":  "false"
+                                            },
+                             "protocolMappers":  [
+                                                     {
+                                                         "name":  "audience customer-account",
+                                                         "protocol":  "openid-connect",
+                                                         "protocolMapper":  "oidc-audience-mapper",
+                                                         "config":  {
+                                                                        "included.custom.audience":  "customer-account",
+                                                                        "access.token.claim":  "true",
+                                                                        "id.token.claim":  "false",
+                                                                        "introspection.token.claim":  "true"
+                                                                    }
+                                                     }
+                                                 ]
+                         },
+                         {
+                             "name":  "customer:read",
+                             "description":  "Consultar clientes vinculados ao tenant",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            }
+                         },
+                         {
+                             "name":  "customer:read:identity",
+                             "description":  "Consultar identidade civil do cliente (CPF e dados pessoais)",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            }
+                         },
+                         {
+                             "name":  "customer:read:contact",
+                             "description":  "Consultar contatos do cliente (e-mail e celular)",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            }
+                         },
+                         {
+                             "name":  "customer:read:address",
+                             "description":  "Consultar endereÃ§o do cliente",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            }
+                         },
+                         {
+                             "name":  "customer:read:full",
+                             "description":  "Consultar todos os dados pessoais do cliente",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            }
+                         },
+                         {
+                             "name":  "customer:write",
+                             "description":  "Cadastrar e alterar clientes",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            }
+                         },
+                         {
+                             "name":  "customer:erase",
+                             "description":  "Solicitar eliminaÃ§Ã£o de dados (LGPD)",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            }
+                         },
+                         {
+                             "name":  "verification:read",
+                             "description":  "Consultar resultados de validaÃ§Ã£o",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            }
+                         },
+                         {
+                             "name":  "verification:write",
+                             "description":  "Solicitar validaÃ§Ãµes (biometria, documento, antifraude, contato)",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            }
+                         },
+                         {
+                             "name":  "me:read",
+                             "description":  "Consultar os prÃ³prios dados de titular",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            }
+                         },
+                         {
+                             "name":  "me:write",
+                             "description":  "Atualizar os prÃ³prios dados de titular e confirmar o vÃ­nculo inicial",
+                             "protocol":  "openid-connect",
+                             "attributes":  {
+                                                "include.in.token.scope":  "true",
+                                                "display.on.consent.screen":  "false"
+                                            }
+                         }
+                     ],
+    "clients":  [
+                    {
+                        "clientId":  "tenant-app-a",
+                        "name":  "Tenant A (aplicaÃ§Ã£o consumidora)",
+                        "enabled":  true,
+                        "protocol":  "openid-connect",
+                        "publicClient":  false,
+                        "clientAuthenticatorType":  "client-secret",
+                        "serviceAccountsEnabled":  true,
+                        "standardFlowEnabled":  false,
+                        "directAccessGrantsEnabled":  false,
+                        "implicitFlowEnabled":  false,
+                        "defaultClientScopes":  [
+                                                    "basic",
+                                                    "customer-account-audience",
+                                                    "customer:write",
+                                                    "customer:erase",
+                                                    "verification:read",
+                                                    "verification:write"
+                                                ],
+                        "optionalClientScopes":  [
+                                                     "customer:read",
+                                                     "customer:read:identity",
+                                                     "customer:read:contact",
+                                                     "customer:read:address",
+                                                     "customer:read:full"
+                                                 ],
+                        "protocolMappers":  [
+                                                {
+                                                    "name":  "tenant_id",
+                                                    "protocol":  "openid-connect",
+                                                    "protocolMapper":  "oidc-hardcoded-claim-mapper",
+                                                    "config":  {
+                                                                   "claim.name":  "tenant_id",
+                                                                   "claim.value":  "tenant-app-a",
+                                                                   "jsonType.label":  "String",
+                                                                   "access.token.claim":  "true",
+                                                                   "id.token.claim":  "false",
+                                                                   "introspection.token.claim":  "true",
+                                                                   "userinfo.token.claim":  "false"
+                                                               }
+                                                }
+                                            ]
+                    },
+                    {
+                        "clientId":  "tenant-app-b",
+                        "name":  "Tenant B (aplicaÃ§Ã£o consumidora)",
+                        "enabled":  true,
+                        "protocol":  "openid-connect",
+                        "publicClient":  false,
+                        "clientAuthenticatorType":  "client-secret",
+                        "serviceAccountsEnabled":  true,
+                        "standardFlowEnabled":  false,
+                        "directAccessGrantsEnabled":  false,
+                        "implicitFlowEnabled":  false,
+                        "defaultClientScopes":  [
+                                                    "basic",
+                                                    "customer-account-audience",
+                                                    "customer:write",
+                                                    "verification:read",
+                                                    "verification:write"
+                                                ],
+                        "optionalClientScopes":  [
+                                                     "customer:read",
+                                                     "customer:read:identity",
+                                                     "customer:read:contact",
+                                                     "customer:read:address",
+                                                     "customer:read:full"
+                                                 ],
+                        "protocolMappers":  [
+                                                {
+                                                    "name":  "tenant_id",
+                                                    "protocol":  "openid-connect",
+                                                    "protocolMapper":  "oidc-hardcoded-claim-mapper",
+                                                    "config":  {
+                                                                   "claim.name":  "tenant_id",
+                                                                   "claim.value":  "tenant-app-b",
+                                                                   "jsonType.label":  "String",
+                                                                   "access.token.claim":  "true",
+                                                                   "id.token.claim":  "false",
+                                                                   "introspection.token.claim":  "true",
+                                                                   "userinfo.token.claim":  "false"
+                                                               }
+                                                }
+                                            ]
+                    },
+                    {
+                        "clientId":  "customer-account-ops",
+                        "name":  "OperaÃ§Ã£o (actuator)",
+                        "enabled":  true,
+                        "protocol":  "openid-connect",
+                        "publicClient":  false,
+                        "clientAuthenticatorType":  "client-secret",
+                        "serviceAccountsEnabled":  true,
+                        "standardFlowEnabled":  false,
+                        "directAccessGrantsEnabled":  false,
+                        "implicitFlowEnabled":  false,
+                        "defaultClientScopes":  [
+                                                    "basic",
+                                                    "roles",
+                                                    "customer-account-audience"
+                                                ],
+                        "optionalClientScopes":  [
+
+                                                 ]
+                    },
+                    {
+                        "clientId":  "customer-account-admin",
+                        "name":  "Customer Account (link de identidade)",
+                        "enabled":  true,
+                        "protocol":  "openid-connect",
+                        "publicClient":  false,
+                        "clientAuthenticatorType":  "client-secret",
+                        "serviceAccountsEnabled":  true,
+                        "standardFlowEnabled":  false,
+                        "directAccessGrantsEnabled":  false,
+                        "implicitFlowEnabled":  false,
+                        "defaultClientScopes":  [
+                                                    "basic"
+                                                ],
+                        "optionalClientScopes":  [
+
+                                                 ]
+                    },
+                    {
+                        "clientId":  "tenant-app-a-web",
+                        "name":  "Portal do titular (Tenant A)",
+                        "enabled":  true,
+                        "protocol":  "openid-connect",
+                        "publicClient":  true,
+                        "standardFlowEnabled":  true,
+                        "directAccessGrantsEnabled":  false,
+                        "implicitFlowEnabled":  false,
+                        "serviceAccountsEnabled":  false,
+                        "redirectUris":  [
+                                             "https://portal.example.com/*"
+                                         ],
+                        "webOrigins":  [
+                                           "https://portal.example.com"
+                                       ],
+                        "attributes":  {
+                                           "pkce.code.challenge.method":  "S256"
+                                       },
+                        "defaultClientScopes":  [
+                                                    "basic",
+                                                    "profile",
+                                                    "email",
+                                                    "customer-account-audience",
+                                                    "me:read",
+                                                    "me:write"
+                                                ],
+                        "optionalClientScopes":  [
+
+                                                 ],
+                        "protocolMappers":  [
+                                                {
+                                                    "name":  "tenant_id",
+                                                    "protocol":  "openid-connect",
+                                                    "protocolMapper":  "oidc-hardcoded-claim-mapper",
+                                                    "config":  {
+                                                                   "claim.name":  "tenant_id",
+                                                                   "claim.value":  "tenant-app-a",
+                                                                   "jsonType.label":  "String",
+                                                                   "access.token.claim":  "true",
+                                                                   "id.token.claim":  "false",
+                                                                   "introspection.token.claim":  "true",
+                                                                   "userinfo.token.claim":  "false"
+                                                               }
+                                                },
+                                                {
+                                                    "name":  "customer_id",
+                                                    "protocol":  "openid-connect",
+                                                    "protocolMapper":  "oidc-usermodel-attribute-mapper",
+                                                    "config":  {
+                                                                   "user.attribute":  "customer_id",
+                                                                   "claim.name":  "customer_id",
+                                                                   "jsonType.label":  "String",
+                                                                   "access.token.claim":  "true",
+                                                                   "id.token.claim":  "true",
+                                                                   "introspection.token.claim":  "true",
+                                                                   "userinfo.token.claim":  "true"
+                                                               }
+                                                }
+                                            ]
+                    },
+                    {
+                        "clientId":  "tenant-app-b-web",
+                        "name":  "Portal do titular (Tenant B)",
+                        "enabled":  true,
+                        "protocol":  "openid-connect",
+                        "publicClient":  true,
+                        "standardFlowEnabled":  true,
+                        "directAccessGrantsEnabled":  false,
+                        "implicitFlowEnabled":  false,
+                        "serviceAccountsEnabled":  false,
+                        "redirectUris":  [
+                                             "https://portal.example.com/*"
+                                         ],
+                        "webOrigins":  [
+                                           "https://portal.example.com"
+                                       ],
+                        "attributes":  {
+                                           "pkce.code.challenge.method":  "S256"
+                                       },
+                        "defaultClientScopes":  [
+                                                    "basic",
+                                                    "profile",
+                                                    "email",
+                                                    "customer-account-audience",
+                                                    "me:read",
+                                                    "me:write"
+                                                ],
+                        "optionalClientScopes":  [
+
+                                                 ],
+                        "protocolMappers":  [
+                                                {
+                                                    "name":  "tenant_id",
+                                                    "protocol":  "openid-connect",
+                                                    "protocolMapper":  "oidc-hardcoded-claim-mapper",
+                                                    "config":  {
+                                                                   "claim.name":  "tenant_id",
+                                                                   "claim.value":  "tenant-app-b",
+                                                                   "jsonType.label":  "String",
+                                                                   "access.token.claim":  "true",
+                                                                   "id.token.claim":  "false",
+                                                                   "introspection.token.claim":  "true",
+                                                                   "userinfo.token.claim":  "false"
+                                                               }
+                                                },
+                                                {
+                                                    "name":  "customer_id",
+                                                    "protocol":  "openid-connect",
+                                                    "protocolMapper":  "oidc-usermodel-attribute-mapper",
+                                                    "config":  {
+                                                                   "user.attribute":  "customer_id",
+                                                                   "claim.name":  "customer_id",
+                                                                   "jsonType.label":  "String",
+                                                                   "access.token.claim":  "true",
+                                                                   "id.token.claim":  "true",
+                                                                   "introspection.token.claim":  "true",
+                                                                   "userinfo.token.claim":  "true"
+                                                               }
+                                                }
+                                            ]
+                    },
+                    {
+                        "clientId":  "tenant-app-a-admin",
+                        "name":  "Console de administraÃ§Ã£o do Tenant A",
+                        "enabled":  true,
+                        "fullScopeAllowed":  false,
+                        "protocol":  "openid-connect",
+                        "publicClient":  true,
+                        "standardFlowEnabled":  true,
+                        "directAccessGrantsEnabled":  false,
+                        "implicitFlowEnabled":  false,
+                        "serviceAccountsEnabled":  false,
+                        "redirectUris":  [
+                                             "http://localhost:*"
+                                         ],
+                        "webOrigins":  [
+                                           "+"
+                                       ],
+                        "attributes":  {
+                                           "pkce.code.challenge.method":  "S256"
+                                       },
+                        "authenticationFlowBindingOverrides":  {
+                                                                   "browser":  "tenant-admin-browser-v1"
+                                                               },
+                        "defaultClientScopes":  [
+                                                    "basic",
+                                                    "roles",
+                                                    "customer-account-audience"
+                                                ],
+                        "optionalClientScopes":  [
+
+                                                 ],
+                        "protocolMappers":  [
+                                                {
+                                                    "name":  "tenant_id",
+                                                    "protocol":  "openid-connect",
+                                                    "protocolMapper":  "oidc-hardcoded-claim-mapper",
+                                                    "config":  {
+                                                                   "claim.name":  "tenant_id",
+                                                                   "claim.value":  "tenant-app-a",
+                                                                   "jsonType.label":  "String",
+                                                                   "access.token.claim":  "true",
+                                                                   "id.token.claim":  "false",
+                                                                   "introspection.token.claim":  "true",
+                                                                   "userinfo.token.claim":  "false"
+                                                               }
+                                                }
+                                            ]
+                    },
+                    {
+                        "clientId":  "tenant-app-b-admin",
+                        "name":  "Console de administraÃ§Ã£o do Tenant B",
+                        "enabled":  true,
+                        "fullScopeAllowed":  false,
+                        "protocol":  "openid-connect",
+                        "publicClient":  true,
+                        "standardFlowEnabled":  true,
+                        "directAccessGrantsEnabled":  false,
+                        "implicitFlowEnabled":  false,
+                        "serviceAccountsEnabled":  false,
+                        "redirectUris":  [
+                                             "http://localhost:*"
+                                         ],
+                        "webOrigins":  [
+                                           "+"
+                                       ],
+                        "attributes":  {
+                                           "pkce.code.challenge.method":  "S256"
+                                       },
+                        "authenticationFlowBindingOverrides":  {
+                                                                   "browser":  "tenant-admin-browser-v1"
+                                                               },
+                        "defaultClientScopes":  [
+                                                    "basic",
+                                                    "roles",
+                                                    "customer-account-audience"
+                                                ],
+                        "optionalClientScopes":  [
+
+                                                 ],
+                        "protocolMappers":  [
+                                                {
+                                                    "name":  "tenant_id",
+                                                    "protocol":  "openid-connect",
+                                                    "protocolMapper":  "oidc-hardcoded-claim-mapper",
+                                                    "config":  {
+                                                                   "claim.name":  "tenant_id",
+                                                                   "claim.value":  "tenant-app-b",
+                                                                   "jsonType.label":  "String",
+                                                                   "access.token.claim":  "true",
+                                                                   "id.token.claim":  "false",
+                                                                   "introspection.token.claim":  "true",
+                                                                   "userinfo.token.claim":  "false"
+                                                               }
+                                                }
+                                            ]
+                    }
+                ],
+    "users":  [
+                  {
+                      "username":  "service-account-customer-account-admin",
+                      "enabled":  true,
+                      "serviceAccountClientId":  "customer-account-admin",
+                      "clientRoles":  {
+                                          "realm-management":  [
+                                                                   "manage-users"
+                                                               ]
+                                      }
+                  }
+              ]
+}

@@ -24,7 +24,8 @@ Resumo para retomar o trabalho sem reler o projeto inteiro.
 | `eventsourcing` | `EventStore`, `NewEvent`, `StoredEvent`, `ExpectedRevision`, `EventStreamSubscriber` (catch-up em `$all` com checkpoint no Mongo, `traceparent` nos metadados) | todas |
 | `privacy` | `PersonalDataCipher` (AES-GCM por titular, DEK embrulhada no Vault Transit), `BlindIndex` (HMAC), `CryptoShredder` | todas |
 | `secrets` | `SecretStore.read(path)` → Vault KV v2 (`secret/customer-account/<path>`) com cache; `local` em dev/test | `SecretStore` |
-| `customer` | Agregado `Customer` (ES), reserva de CPF, read model `customer_views`, eliminação | `CustomerDirectory`, `CustomerSnapshot`, `CustomerErasureCompleted` |
+| `customer` | Agregado `Customer` (ES), reserva de CPF, vínculo/desvínculo de tenant com aceite, perfil de titular e read model `customer_views` | `CustomerDirectory`, `CustomerDataAccess`, `CustomerSnapshot`, `CustomerErasureCompleted`, `CustomerTenantUnlinked` |
+| `consent` | Catálogo de finalidades, livro ES cifrado `consent-<customer>-<tenant>`, projeção `consent_views`, minimização por base legal e consentimento | `ConsentDirectory` |
 | `verification` | Política por tenant; processo síncrono (OTP) e hospedado (link/callback) event-sourced; `ResilientProviderGateway`; read model/status atual, inbox e incidente | — |
 | `tenant` | Webhook do tenant (`tenant_webhooks`), fila `tenant_notifications`, assinatura `v1=HMAC`, guarda SSRF | `TenantNotifications`, `TenantNotification`, `TenantNotificationDelivered/Failed` |
 
@@ -77,6 +78,12 @@ ser `public`; `@ConfigurationProperties` são excluídos).
 - Resource server JWT (Keycloak realm `customer-account`, `aud=customer-account`). `tenant_id` sempre do token.
 - Escopos: `customer:read|write|erase`, `verification:read|write`. Admin do tenant: role de client `tenant-admin`
   (só roles de `resource_access[azp]`), `/api/v1/tenant/**`; `app.security.tenant-admin-acr-values` exige `acr`.
+- Titular: OIDC Authorization Code + PKCE, passkey WebAuthn passwordless; vínculo inicial de subject a cadastro usa
+  e-mail verificado + OTP e service account mínimo do Keycloak. `SubjectPrincipal` carrega `customer_id` e tenant.
+- Leituras de cliente: escopos granulares `customer:read:identity|contact|address|full`; a resposta é a interseção
+  com finalidades do tenant e consentimentos vigentes. O legado `customer:read` continua como alias de leitura completa.
+- Novo vínculo entre tenants exige aprovação do titular; desvínculo mantém a pessoa e os demais vínculos, limpa
+  projeções por tenant e não restaura dados de gerações/vínculos anteriores.
 - Rotas públicas hoje: health/info, OpenAPI. Qualquer rota pública nova precisa de autenticação própria
   (assinatura/tokens) e entrar explicitamente no `SecurityConfig`.
 

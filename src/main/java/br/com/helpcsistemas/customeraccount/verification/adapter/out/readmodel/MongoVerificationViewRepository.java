@@ -97,6 +97,18 @@ class MongoVerificationViewRepository implements VerificationViewRepositoryPort 
     }
 
     @Override
+    public void deleteByTenantAndCustomer(TenantId tenant, UUID customerId, Instant removedAt) {
+        mongo.remove(
+                Query.query(Criteria.where("customerId")
+                        .is(customerId.toString())
+                        .and("tenantId")
+                        .is(tenant.value())
+                        .and("requestedAt")
+                        .lte(removedAt)),
+                COLLECTION);
+    }
+
+    @Override
     public List<VerificationId> findAwaitingExpiredBefore(Instant instant, int limit) {
         var query = Query.query(new Criteria()
                         .orOperator(

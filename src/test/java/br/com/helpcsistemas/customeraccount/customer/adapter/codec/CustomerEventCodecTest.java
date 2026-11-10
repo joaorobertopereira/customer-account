@@ -44,6 +44,24 @@ class CustomerEventCodecTest {
                 new EmailChanged(id, TENANT_A, Email.of("nova@example.com"), at),
                 new MobilePhoneChanged(id, TENANT_A, MobilePhone.of("21987654321"), at),
                 new CustomerErased(id, TENANT_A, at)));
+        var request = java.util.UUID.randomUUID();
+        events.addAll(List.of(
+                new br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkRequested(
+                        id,
+                        CustomerFixtures.TENANT_B,
+                        request,
+                        CustomerFixtures.personalData(),
+                        CustomerFixtures.email(),
+                        CustomerFixtures.mobilePhone(),
+                        CustomerFixtures.address(),
+                        at.plusSeconds(604800),
+                        at),
+                new br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkApproved(
+                        id, CustomerFixtures.TENANT_B, request, at),
+                new br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkRejected(
+                        id, CustomerFixtures.TENANT_B, request, "EXPIRED", at),
+                new br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerUnlinkedFromTenant(
+                        id, CustomerFixtures.TENANT_B, at)));
 
         for (var event : events) {
             assertThat(codec.decode(stored(codec.encode(event)))).isEqualTo(event);

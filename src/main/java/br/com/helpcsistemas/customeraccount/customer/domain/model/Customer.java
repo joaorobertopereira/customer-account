@@ -3,11 +3,16 @@ package br.com.helpcsistemas.customeraccount.customer.domain.model;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.AddressChanged;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerErased;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerEvent;
+import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkApproved;
+import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkRejected;
+import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkRequested;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkedToTenant;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerRegistered;
+import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerUnlinkedFromTenant;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.EmailChanged;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.MobilePhoneChanged;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.PersonalDataUpdated;
+import br.com.helpcsistemas.customeraccount.shared.domain.BusinessRuleException;
 import br.com.helpcsistemas.customeraccount.shared.domain.EventSourcedAggregate;
 import br.com.helpcsistemas.customeraccount.shared.domain.ResourceNotFoundException;
 import br.com.helpcsistemas.customeraccount.shared.domain.TenantId;
@@ -36,6 +41,9 @@ public class Customer extends EventSourcedAggregate<CustomerEvent> {
     private MobilePhone mobilePhone;
     private Address address;
     private final Set<TenantId> tenants = new HashSet<>();
+    private final java.util.Map<TenantId, java.time.Instant> linkedAt = new java.util.HashMap<>();
+    private final java.util.Map<TenantId, CustomerLinkRequested> linkRequests = new java.util.HashMap<>();
+    private final java.util.Map<TenantId, CustomerLinkRequested> suggestions = new java.util.HashMap<>();
 
     private Customer() {}
 
@@ -110,6 +118,72 @@ public class Customer extends EventSourcedAggregate<CustomerEvent> {
         raise(new CustomerErased(id, by, clock.instant()));
     }
 
+    public void requestLink(
+            TenantId tenant,
+            PersonalData data,
+            Email requestedEmail,
+            MobilePhone phone,
+            Address requestedAddress,
+            Clock clock) {
+        data.ensureEligibleOn(today(clock));
+        if (status != CustomerStatus.ACTIVE) {
+            throw new ResourceNotFoundException("CUSTOMER_NOT_FOUND", "Cliente não encontrado");
+        }
+        if (tenants.contains(tenant)) {
+            throw new br.com.helpcsistemas.customeraccount.shared.domain.ResourceAlreadyExistsException(
+                    "CUSTOMER_ALREADY_REGISTERED", "Já existe cadastro para o CPF informado");
+        }
+        var pending = linkRequests.get(tenant);
+        if (pending != null && pending.expiresAt().isAfter(clock.instant())) {
+            return;
+        }
+        if (pending != null) {
+            raise(new CustomerLinkRejected(id, tenant, pending.requestId(), "EXPIRED", clock.instant()));
+        }
+        raise(new CustomerLinkRequested(
+                id,
+                tenant,
+                java.util.UUID.randomUUID(),
+                data,
+                requestedEmail,
+                phone,
+                requestedAddress,
+                clock.instant().plus(java.time.Duration.ofDays(7)),
+                clock.instant()));
+    }
+
+    public void decideLink(TenantId authenticatedTenant, java.util.UUID requestId, boolean approve, Clock clock) {
+        ensureActiveFor(authenticatedTenant);
+        var request = linkRequests.values().stream()
+                .filter(r -> r.requestId().equals(requestId))
+                .findFirst()
+                .orElseThrow(
+                        () -> new ResourceNotFoundException("LINK_REQUEST_NOT_FOUND", "Solicitação não encontrada"));
+        if (!request.expiresAt().isAfter(clock.instant())) {
+            throw new BusinessRuleException("LINK_REQUEST_EXPIRED", "Solicitação de vínculo expirada");
+        }
+        if (approve) {
+            raise(new CustomerLinkApproved(id, request.tenantId(), requestId, clock.instant()));
+            raise(new CustomerLinkedToTenant(id, request.tenantId(), clock.instant()));
+        } else {
+            raise(new CustomerLinkRejected(id, request.tenantId(), requestId, "HOLDER_REJECTED", clock.instant()));
+        }
+    }
+
+    public void expireLink(java.util.UUID requestId, Clock clock) {
+        linkRequests.values().stream()
+                .filter(r -> r.requestId().equals(requestId) && !r.expiresAt().isAfter(clock.instant()))
+                .findFirst()
+                .ifPresent(
+                        r -> raise(new CustomerLinkRejected(id, r.tenantId(), requestId, "EXPIRED", clock.instant())));
+    }
+
+    public void unlink(TenantId authenticatedTenant, TenantId targetTenant, Clock clock) {
+        ensureActiveFor(authenticatedTenant);
+        ensureActiveFor(targetTenant);
+        raise(new CustomerUnlinkedFromTenant(id, targetTenant, clock.instant()));
+    }
+
     @Override
     protected void apply(CustomerEvent event) {
         switch (event) {
@@ -122,7 +196,27 @@ public class Customer extends EventSourcedAggregate<CustomerEvent> {
                 mobilePhone = e.mobilePhone();
                 address = e.address();
             }
-            case CustomerLinkedToTenant e -> tenants.add(e.tenantId());
+            case CustomerLinkedToTenant e -> {
+                tenants.add(e.tenantId());
+                linkedAt.put(e.tenantId(), e.occurredAt());
+            }
+            case CustomerLinkRequested e -> linkRequests.put(e.tenantId(), e);
+            case CustomerLinkApproved e -> {
+                var request = linkRequests.remove(e.tenantId());
+                if (request != null
+                        && (!request.suggestedPersonalData().equals(personalData)
+                                || !request.suggestedEmail().equals(email)
+                                || !request.suggestedMobilePhone().equals(mobilePhone)
+                                || !Objects.equals(request.suggestedAddress(), address))) {
+                    suggestions.put(e.tenantId(), request);
+                }
+            }
+            case CustomerLinkRejected e -> linkRequests.remove(e.tenantId());
+            case CustomerUnlinkedFromTenant e -> {
+                tenants.remove(e.tenantId());
+                linkedAt.remove(e.tenantId());
+                suggestions.remove(e.tenantId());
+            }
             case PersonalDataUpdated e -> personalData = e.personalData();
             case AddressChanged e -> address = e.address();
             case EmailChanged e -> email = e.email();
@@ -171,5 +265,17 @@ public class Customer extends EventSourcedAggregate<CustomerEvent> {
 
     public Set<TenantId> tenants() {
         return Set.copyOf(tenants);
+    }
+
+    public java.util.Map<TenantId, CustomerLinkRequested> linkRequests() {
+        return java.util.Map.copyOf(linkRequests);
+    }
+
+    public java.util.Map<TenantId, CustomerLinkRequested> suggestions() {
+        return java.util.Map.copyOf(suggestions);
+    }
+
+    public Optional<java.time.Instant> linkedAt(TenantId tenant) {
+        return Optional.ofNullable(linkedAt.get(tenant));
     }
 }

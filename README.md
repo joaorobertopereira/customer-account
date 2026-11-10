@@ -4,8 +4,9 @@ Core **multi-tenant de dados pessoais** compartilhado por várias aplicações (
 Spring Boot 4.1 + Spring Modulith 2.1, **CQRS + Event Sourcing** com **KurrentDB** (escrita) e **MongoDB** (leitura,
 via serviço de projeção), segurança e **LGPD by design**, observabilidade com **OpenTelemetry**.
 
-> Status: **Fases 1, 2a, 2b e base genérica da 3a** implementadas. A 3a suporta link hospedado e callback assinado;
-> a configuração real da Legitimuz/Netrin depende da documentação operacional de cada empresa.
+> Status: **Fases 1, 2a, 2b, 4a e 4b**, além da base genérica da 3a, implementadas.
+> A validação interativa de passkey no navegador ainda não foi executada; o step-up biométrico opcional também
+> não faz parte desta entrega. A configuração real da Legitimuz/Netrin depende da documentação operacional de cada empresa.
 > Ver [Roadmap](#9-roadmap).
 
 ---
@@ -38,7 +39,8 @@ flowchart LR
 | `platform` | Segurança (resource server, escopos, tenant do token), logging de fluxo, OTel, OpenAPI, `Clock` | shared |
 | `eventsourcing` | API neutra `EventStore`/`EventStreamSubscriber` sobre KurrentDB, checkpoints, propagação de trace | shared |
 | `privacy` | `PersonalDataCipher` (AES-256-GCM por titular), `BlindIndex` (HMAC), `CryptoShredder` | shared |
-| `customer` | Domínio da pessoa, comandos, projeção, consultas, eliminação. API pública: `CustomerDirectory`, `CustomerErasureCompleted` | shared, eventsourcing, privacy |
+| `customer` | Domínio da pessoa, comandos, projeção, consultas, eliminação e vínculos aprovados pelo titular. API pública: `CustomerDirectory`, `CustomerDataAccess`, `CustomerTenantUnlinked` | shared, eventsourcing, privacy, tenant |
+| `consent` | Finalidades por tenant, consentimentos event-sourced cifrados, projeção e minimização. API pública: `ConsentDirectory` | shared, eventsourcing, privacy, customer, tenant |
 | `secrets` | `SecretStore` (Vault KV v2 com cache; `local` em dev/teste) para credenciais de provedores | shared |
 | `tenant` | Webhook do tenant (URL, segredo HMAC cifrado), fila de entrega com retentativas, proteção SSRF. API pública: `TenantNotifications`, `TenantNotificationDelivered/Failed` | shared, privacy |
 | `verification` | Política de provedores por tenant, processo de validação event-sourced (com desafio OTP), gateway resiliente, incidentes, entrega do resultado | shared, eventsourcing, privacy, secrets, customer, tenant |
@@ -85,6 +87,8 @@ customer/
 | Vazamento em logs/URLs | Value objects mascaram `toString()`; logs sem argumentos; CPF buscado via `POST /search` (nunca na URL); erros não ecoam valores |
 | Menor privilégio | Token do Vault só pode `datakey`/`decrypt` da KEK e **ler** `secret/customer-account/*` (`docker/vault/customer-account-policy.hcl`) |
 | Trilha de auditoria | Toda leitura de dado pessoal gera log `audit.action=personal-data.read` com tenant e titular |
+| Consentimento e necessidade | Campos expostos = escopos OAuth2 ∩ finalidades autorizadas; sem finalidade, apenas metadados do recurso |
+| Vínculo entre tenants | CPF já cadastrado em outro tenant gera solicitação pendente, sem id ou perfil na resposta; acesso só após aprovação do titular |
 | Menores de idade | Bloqueados (art. 14 exige consentimento dos responsáveis) |
 
 ---
@@ -168,19 +172,106 @@ estado civil, nacionalidade, e-mail, celular (E.164) e endereço.
 
 ---
 
+### 5.1 Consentimentos e vínculos (fase 4b)
+
+O catálogo de finalidades é explícito: o administrador define descrição, base legal, versão da política e
+campos necessários. **Não existe finalidade implícita**, nem mesmo para o tenant que cadastrou a pessoa.
+Bases `CONTRACT`, `LEGAL_OBLIGATION`, `LEGITIMATE_INTEREST` e `CREDIT_PROTECTION` permitem os campos
+declarados no catálogo; a adequação da base legal é responsabilidade do controlador. `CONSENT` exige
+aceite para a versão atual. Alterar descrição/base/campos requer alterar `policyVersion`.
+
+Campos aceitos: `cpf`, `personalData.fullName`, `personalData.socialName`, `personalData.birthDate`,
+`personalData.motherName`, `personalData.maritalStatus`, `personalData.nationality`, `email`, `mobilePhone`,
+`address`. Escopos granulares: `customer:read:identity`, `customer:read:contact`, `customer:read:address`,
+`customer:read:full`. `customer:read` permanece como alias depreciado de `full`, **sem ignorar consentimentos**.
+Campos não autorizados são omitidos do JSON (incluindo os campos internos de `personalData`); a auditoria
+registra `audit.fields`. O titular pode consultar seu próprio perfil completo na API `me`.
+
+| Método | Caminho | Uso |
+|---|---|---|
+| `PUT` | `/api/v1/tenant/purposes/{code}` | Admin: `{description, legalBasis, fields[], policyVersion}` |
+| `GET` | `/api/v1/tenant/purposes` | Catálogo do tenant |
+| `POST` | `/api/v1/customers/{id}/consents` | `{purpose, policyVersion, evidence:{channel, sessionId, textHash}}` |
+| `GET` | `/api/v1/customers/{id}/consents` | Aceites do vínculo atual |
+| `DELETE` | `/api/v1/customers/{id}/consents/{purpose}` | `{reason}`; revogação com efeito imediato nas leituras |
+| `GET` | `/api/v1/me/links/requests` | Titular: solicitações recebidas, com sugestões de perfil |
+| `POST` | `/api/v1/me/links/requests/{requestId}/approve` ou `/reject` | Decisão autenticada pelo titular |
+| `GET` | `/api/v1/me/links/suggestions` | Sugestões dos vínculos aprovados; não sobrescrevem o perfil |
+| `DELETE` | `/api/v1/customers/{id}/link` | Tenant com `customer:write`: remove seu vínculo, não a pessoa |
+| `DELETE` | `/api/v1/me/links/{tenantId}` | Titular: remove um vínculo |
+| `GET`/`POST` | `/api/v1/me/consents/{tenantId}` | Titular: consulta/aceita; sessão vem do claim `sid` |
+| `DELETE` | `/api/v1/me/consents/{tenantId}/{purpose}` | Titular: revoga com `{reason}` |
+
+Evidência: canal `app`, `web` ou `presencial`, identificador da sessão e SHA-256 hexadecimal do texto apresentado.
+A API do tenant aceita evidência coletada por ele (inclusive presencial); não gera prova de manifestação
+por si só. O controlador deve conservar prova verificável de aceite, sem usar o endpoint para consentimento presumido.
+O livro `consent-<customerId>-<tenantId>` e a projeção `consent_views` guardam evidências cifradas pela chave do titular.
+
+`POST /customers` com CPF de outro tenant retorna **202**, exatamente `{"status":"LINK_PENDING"}`, sem
+`Location` nem identificador do cadastro existente. O titular usa seu token do tenant ao qual já pertence para
+aprovar a solicitação. Neste fluxo a confirmação é pelo login da 4a; não há novo OTP no contato informado pelo
+tenant solicitante. Solicitações expiram em **7 dias** e geram `CustomerLinkRejected`; repetição enquanto pendente
+não renova o prazo. CPF repetido no mesmo tenant continua retornando 409.
+
+Desvínculo bloqueia acesso imediatamente pelo event store, mesmo antes da projeção. Read models de
+validações e consentimentos são removidos apenas para aquele tenant. Um novo vínculo não reutiliza
+consentimentos nem resultados de validações do vínculo anterior. Outros tenants e a pessoa permanecem intactos.
+Webhooks reutilizam a fila assinada da seção 7.6: `consent.revoked`, `customer.link_approved`, `customer.unlinked`.
+
 ## 6. Autenticação do titular: passwordless + 2 fatores
 
-Não armazenamos senhas. Proposta (fase 4, no Keycloak 26 já provisionado):
+O realm versionado de desenvolvimento habilita cadastro com verificação de e-mail e passkey WebAuthn passwordless
+(chave residente + verificação do usuário). O fluxo de browser do titular não contém autenticador de senha. Clientes
+`tenant-app-a-web` e `tenant-app-b-web` usam Authorization Code + PKCE (`S256`) e escopos `me:read`/`me:write`.
+O `customer_id` só é incluído no token após o vínculo; o backend valida o subject, tenant e cadastro ativo no
+`CustomerDirectory` em cada operação própria.
 
-1. **Fator 1 – posse**: passkey (WebAuthn/FIDO2, resident key + user verification), com fallback **OTP por e-mail
-   ou SMS/WhatsApp** (link mágico/código de uso único).
-2. **Fator 2 – inerência/conhecimento**: a própria passkey já é 2FA (dispositivo + biometria/PIN local). Para o
-   fallback OTP, segundo fator TOTP ou **step-up biométrico** (liveness no provedor) em operações sensíveis.
-3. Tenants autenticam o usuário via **OIDC Authorization Code + PKCE** no realm central (SSO entre tenants), com
-   `acr`/`amr` no token para exigir nível de garantia por operação.
+**Vínculo de acesso com cadastro já existente** (o cadastro do cliente nunca provisiona usuário no Keycloak):
 
-O realm já vem com políticas de WebAuthn passwordless e TOTP configuradas; os fluxos de autenticação serão
-versionados na fase 4.
+1. O titular autentica com token contendo `email_verified=true`; o backend usa exclusivamente esse e-mail e o
+   tenant do token para localizar um cadastro existente e revalida o candidato no event store.
+2. `POST /api/v1/me/link/otp` envia código de uso único ao e-mail armazenado no cadastro. O desafio é associado a
+   `subject`, tenant e customer, expira em 10 minutos, é armazenado como HMAC e aceita no máximo cinco tentativas.
+3. `POST /api/v1/me/link` confirma `challengeId` + código. O serviço de conta Keycloak aplica apenas o atributo
+   `customer_id` ao usuário cujo ID é o `sub` do JWT; vínculo existente não pode ser trocado. Depois, o titular
+   autentica novamente para receber o claim atualizado.
+
+Inspecione e-mail/código local em Mailpit (`http://localhost:8025`). O service account
+`customer-account-admin` tem somente `realm-management/manage-users`; em produção forneça seu segredo por secret
+manager (`KEYCLOAK_ADMIN_CLIENT_SECRET`), nunca pelo arquivo do realm.
+
+**Escopos de leitura de dados do cliente**: `customer:read:identity` (CPF e dados pessoais),
+`customer:read:contact` (e-mail e celular), `customer:read:address` e `customer:read:full`. Os três primeiros
+retornam apenas os respectivos campos; `customer:read:full` e o escopo legado `customer:read` retornam o conjunto
+completo. Nos clients de serviço, solicite o escopo necessário como opcional; não inclua CPF/dados pessoais quando
+a integração não precisar deles. `me:read` e `me:write` são separados e exigem `customer_id` válido para todas as
+rotas próprias, exceto o início/confirmação do vínculo.
+
+**Admins de tenant** usam um fluxo browser separado com senha e step-up condicional LoA 2; o segundo fator aceita
+TOTP ou WebAuthn. O realm mapeia LoA 1/2 para `acr` `1`/`2`, e clientes OIDC de administração devem solicitar
+`acr_values=2`; o backend exige `acr=2` em produção para `/api/v1/tenant/**`.
+`directAccessGrantsEnabled` permanece disponível apenas no realm de desenvolvimento e é desabilitado no arquivo de
+produção.
+
+### Teste manual no compose
+
+1. Inicie `docker compose up -d --build` e abra `http://localhost:8180`. No realm `customer-account`, crie/registre
+   um titular e conclua a verificação de e-mail em Mailpit. No browser, registre uma passkey para
+   `http://localhost:8180` (use HTTPS e domínio real fora do compose).
+2. Use um OIDC test client com `tenant-app-a-web`, redirect URI local autorizado e Authorization Code + PKCE
+   (`S256`). Autentique sem senha pela passkey; o token inicial não deve conter `customer_id`.
+3. Cadastre previamente o cliente pela API como Tenant A. Com o token do titular, invoque
+   `POST /api/v1/me/link/otp`, leia o código no Mailpit e confirme com `POST /api/v1/me/link`. Faça novo login e
+   confira `GET /api/v1/me`, `/api/v1/me/verifications` e `/api/v1/me/links`. Um cadastro de outro tenant não pode
+   ser localizado nem vinculado.
+4. No primeiro login browser dos admins seed (`admin.tenant-a`/`admin.tenant-b`, senha local `dev`), conclua a
+   configuração de TOTP ou WebAuthn e solicite `acr_values=2` na autorização OIDC. Em produção, substitua
+   hosts/redirects de exemplo por origens HTTPS, configure SMTP e mantenha `TENANT_ADMIN_ACR_VALUES=2`.
+
+Para importar o realm de produção no compose, defina
+`KEYCLOAK_REALM_FILE=./docker/keycloak/realm-customer-account-prod.json`; substitua
+`https://portal.example.com` pelas origens reais e configure SMTP/RP ID no Keycloak antes de abrir o cadastro.
+`http/api.http` contém chamadas de autoatendimento e vínculo para usar com um token de titular obtido via PKCE.
 
 ---
 
@@ -431,8 +522,8 @@ providerTransactionId, policyVersion, failover, requestedAt, concludedAt}}` — 
 | **2b (feito)** | Módulo `secrets` (Vault KV, credencial por provedor e por tenant); OTP próprio por e-mail, Twilio Verify/Lookup, ZeroBounce; desafio com `AWAITING_CONFIRMATION`, 5 tentativas e expiração; módulo `tenant` com webhook assinado (HMAC), fila com retentativas, proteção SSRF e `VerificationResultDelivered`; `acr` exigido para admins (produção); Mailpit no compose |
 | **3a (base genérica feita)** | Link hospedado, reuso de sessão, webhook de entrada com HMAC + inbox, regras por tenant (fraude/score/revisão/erro), validade/revalidação, sandbox — [spec](spec/fase-3a-validacao-hospedada.md). **Pendente:** configurar contratos reais Legitimuz/Netrin quando recebidos |
 | 3b – Canal de status | Token de canal, polling público, push SignalR/SSE — [spec](spec/fase-3b-canal-tempo-real.md) |
-| 4a – Autenticação | Passwordless + 2FA do titular, MFA/step-up dos admins — [spec](spec/fase-4a-autenticacao-titular-admin.md) |
-| 4b – Consentimento | Módulo `consent`, vínculo entre tenants com aceite do titular, minimização — [spec](spec/fase-4b-consentimento.md) |
+| **4a (core implementado)** | Passkey/passwordless, vínculo por OTP ao e-mail verificado, autoatendimento do titular, MFA TOTP/LoA 2 de admins — [spec](spec/fase-4a-autenticacao-titular-admin.md). Pendente: validação manual de passkey no navegador; step-up biométrico é opcional e não implementado |
+| **4b (implementado)** | Módulo `consent`, vínculo entre tenants aprovado pelo titular, desvínculo, minimização por escopo/finalidade e webhooks — [spec](spec/fase-4b-consentimento.md) |
 | 5 – Integração | Kafka no compose, eventos para tenants, portal do titular (art. 18) — [spec](spec/fase-5-integracao-kafka-portal.md) |
 | Transversal | Idempotência, rate limit, parking, snapshots, upcasters, rotação de KEK, auditoria imutável — [spec](spec/fase-t-transversal.md) |
 
@@ -444,7 +535,7 @@ Escopo de integrações reduzido a **Legitimuz e Netrin** (decisões em [spec/RE
 
 1. **Retenção x eliminação**: obrigações legais (ex.: PLD, 5 anos) podem exigir reter parte dos dados após o pedido de
    eliminação — definir quais e por quanto tempo (crypto-shredding pode ser agendado).
-2. **Eliminação global x por tenant**: hoje o `DELETE` elimina o titular para todos; revogação por tenant virá com o
-   módulo de consentimento.
+2. **Eliminação global x por tenant**: `DELETE /customers/{id}` elimina o titular para todos;
+   `DELETE /customers/{id}/link` remove somente o acesso do tenant, preservando a pessoa.
 3. **Celular estrangeiro e endereço fora do Brasil**: hoje só BR.
 4. **Key store em cluster separado** do read model (recomendado em produção) e política de backup alinhada ao shredding.

@@ -57,6 +57,14 @@ class EventStoreCpfRegistryAdapter implements CpfRegistryPort {
     }
 
     @Override
+    public java.util.Optional<CustomerId> findOwner(Cpf cpf) {
+        return eventStore
+                .readLastEvent(streamOf(cpf))
+                .filter(e -> RESERVED.equals(e.type()))
+                .map(e -> CustomerId.of(e.metadata().get("customerId")));
+    }
+
+    @Override
     public void release(Cpf cpf, CustomerId owner) {
         var stream = streamOf(cpf);
         var last = eventStore.readLastEvent(stream);

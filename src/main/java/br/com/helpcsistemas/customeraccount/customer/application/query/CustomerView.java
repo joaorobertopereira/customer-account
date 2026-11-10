@@ -58,6 +58,42 @@ public record CustomerView(
                 at);
     }
 
+    public CustomerView withoutTenant(TenantId tenant, long revision, Instant at) {
+        var linked = new HashSet<>(tenants);
+        linked.remove(tenant);
+        return new CustomerView(
+                id,
+                revision,
+                status,
+                cpf,
+                personalData,
+                email,
+                emailVerified,
+                mobilePhone,
+                mobilePhoneVerified,
+                address,
+                linked,
+                createdAt,
+                at);
+    }
+
+    public CustomerView withRevision(long revision, Instant at) {
+        return new CustomerView(
+                id,
+                revision,
+                status,
+                cpf,
+                personalData,
+                email,
+                emailVerified,
+                mobilePhone,
+                mobilePhoneVerified,
+                address,
+                tenants,
+                createdAt,
+                at);
+    }
+
     public CustomerView withPersonalData(PersonalData data, long revision, Instant at) {
         return new CustomerView(
                 id,

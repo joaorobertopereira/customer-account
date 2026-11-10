@@ -29,6 +29,15 @@ class CustomerFlowIntegrationTests extends IntegrationTestSupport {
     @Test
     void fullCustomerLifecycle() throws Exception {
         var id = register(tenant("tenant-a", "customer:write"), CPF);
+        mvc.perform(put("/api/v1/tenant/purposes/customer-management")
+                        .with(tenantAdmin("tenant-a"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"description":"Gestao contratual","legalBasis":"CONTRACT","policyVersion":"1",
+                                "fields":["cpf","personalData.fullName","personalData.socialName","personalData.birthDate",
+                                "personalData.motherName","personalData.maritalStatus","personalData.nationality","email","mobilePhone","address"]}
+                                """))
+                .andExpect(status().isNoContent());
 
         // CQRS: leitura eventual pelo read model projetado.
         await().atMost(EVENTUAL)
@@ -56,9 +65,9 @@ class CustomerFlowIntegrationTests extends IntegrationTestSupport {
                         .content("{\"email\":\"invasor@example.com\"}"))
                 .andExpect(status().isNotFound());
 
-        // Unicidade global de CPF.
+        // Duplicação dentro do mesmo tenant continua sendo conflito.
         mvc.perform(post("/api/v1/customers")
-                        .with(tenant("tenant-b", "customer:write"))
+                        .with(tenant("tenant-a", "customer:write"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(registrationBody()))
                 .andExpect(status().isConflict())
