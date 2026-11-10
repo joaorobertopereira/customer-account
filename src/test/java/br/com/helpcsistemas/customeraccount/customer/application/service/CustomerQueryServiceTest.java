@@ -31,7 +31,7 @@ class CustomerQueryServiceTest {
                         java.time.LocalDate.of(1990, 5, 20),
                         "maria.souza@example.com",
                         "+5511912345678")));
-        var projection = new CustomerProjectionService(views);
+        var projection = new CustomerProjectionService(views, new InMemoryCustomerRepository());
         var events = CustomerFixtures.newCustomer(id).pendingEvents();
         for (int revision = 0; revision < events.size(); revision++) {
             projection.project(events.get(revision), revision);
