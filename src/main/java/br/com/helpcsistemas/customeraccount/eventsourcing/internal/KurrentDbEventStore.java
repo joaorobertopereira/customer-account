@@ -92,6 +92,21 @@ class KurrentDbEventStore implements EventStore {
     }
 
     @Override
+    public List<StoredEvent> readStream(String stream, long fromRevision) {
+        return observation("eventstore.read-from", stream).observe(() -> {
+            try {
+                var result = await(client.readStream(
+                        stream, ReadStreamOptions.get().forwards().fromRevision(fromRevision)));
+                return result.getEvents().stream()
+                        .map(e -> mapper.toStored(e.getOriginalEvent()))
+                        .toList();
+            } catch (StreamNotFoundException ex) {
+                return List.of();
+            }
+        });
+    }
+
+    @Override
     public Optional<StoredEvent> readLastEvent(String stream) {
         return observation("eventstore.read-last", stream).observe(() -> {
             try {

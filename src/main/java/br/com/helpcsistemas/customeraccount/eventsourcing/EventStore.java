@@ -17,5 +17,8 @@ public interface EventStore {
     /** Lê todos os eventos do stream em ordem; lista vazia se o stream não existir. */
     List<StoredEvent> readStream(String stream);
 
+    /** Lê os eventos do stream a partir da revisão informada (inclusive); usado para aplicar a cauda após um snapshot. */
+    List<StoredEvent> readStream(String stream, long fromRevision);
+
     Optional<StoredEvent> readLastEvent(String stream);
 }

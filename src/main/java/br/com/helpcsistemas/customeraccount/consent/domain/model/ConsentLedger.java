@@ -19,6 +19,12 @@ public class ConsentLedger extends EventSourcedAggregate<ConsentEvent> {
     private final TenantId tenantId;
     private final Map<String, ConsentGranted> granted = new HashMap<>();
 
+    /** Usado apenas pela restauração de snapshot (campos preenchidos por reflexão). */
+    private ConsentLedger() {
+        this.customerId = null;
+        this.tenantId = null;
+    }
+
     private ConsentLedger(UUID customerId, TenantId tenantId) {
         this.customerId = customerId;
         this.tenantId = tenantId;

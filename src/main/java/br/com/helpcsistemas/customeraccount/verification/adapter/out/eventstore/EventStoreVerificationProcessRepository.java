@@ -1,8 +1,10 @@
 package br.com.helpcsistemas.customeraccount.verification.adapter.out.eventstore;
 
+import br.com.helpcsistemas.customeraccount.eventsourcing.AggregateSnapshots;
 import br.com.helpcsistemas.customeraccount.eventsourcing.EventStore;
 import br.com.helpcsistemas.customeraccount.eventsourcing.ExpectedRevision;
 import br.com.helpcsistemas.customeraccount.eventsourcing.StreamRevisionConflictException;
+import br.com.helpcsistemas.customeraccount.privacy.PersonalDataCipher;
 import br.com.helpcsistemas.customeraccount.privacy.PersonalDataErasedException;
 import br.com.helpcsistemas.customeraccount.shared.domain.ConcurrencyConflictException;
 import br.com.helpcsistemas.customeraccount.verification.adapter.codec.VerificationEventCodec;
@@ -21,22 +23,31 @@ class EventStoreVerificationProcessRepository implements VerificationProcessRepo
 
     private final EventStore eventStore;
     private final VerificationEventCodec codec;
+    private final AggregateSnapshots snapshots;
+    private final PersonalDataCipher cipher;
 
-    EventStoreVerificationProcessRepository(EventStore eventStore, VerificationEventCodec codec) {
+    EventStoreVerificationProcessRepository(
+            EventStore eventStore,
+            VerificationEventCodec codec,
+            AggregateSnapshots snapshots,
+            PersonalDataCipher cipher) {
         this.eventStore = eventStore;
         this.codec = codec;
+        this.snapshots = snapshots;
+        this.cipher = cipher;
     }
 
     @Override
     public Optional<VerificationProcess> findById(VerificationId id) {
-        var stored = eventStore.readStream(codec.processStreamOf(id));
-        if (stored.isEmpty()) {
-            return Optional.empty();
-        }
         try {
-            var history = stored.stream().map(codec::decodeProcess).toList();
-            return Optional.of(
-                    VerificationProcess.rehydrate(history, stored.getLast().revision()));
+            return snapshots.load(
+                    codec.processStreamOf(id),
+                    VerificationProcess.class,
+                    cipher::decrypt,
+                    codec::decodeProcess,
+                    stored -> VerificationProcess.rehydrate(
+                            stored.stream().map(codec::decodeProcess).toList(),
+                            stored.getLast().revision()));
         } catch (PersonalDataErasedException ex) {
             log.atDebug().addKeyValue("verification.id", id).log("Validação de titular eliminado");
             return Optional.empty();
@@ -48,16 +59,20 @@ class EventStoreVerificationProcessRepository implements VerificationProcessRepo
         if (!process.hasPendingEvents()) {
             return;
         }
+        var stream = codec.processStreamOf(process.id());
+        var previous = process.version();
         var events = process.pendingEvents().stream()
                 .map(e -> codec.encodeProcess(e, process.customerId()))
                 .toList();
         try {
-            long revision = eventStore.append(
-                    codec.processStreamOf(process.id()), ExpectedRevision.of(process.version()), events);
+            long revision = eventStore.append(stream, ExpectedRevision.of(previous), events);
             process.markCommitted(revision);
         } catch (StreamRevisionConflictException ex) {
             throw new ConcurrencyConflictException(
                     "VERIFICATION_CONCURRENT_MODIFICATION", "A validação foi alterada por outra operação");
         }
+        var subject = process.customerId().toString();
+        snapshots.maybeSnapshot(
+                stream, process, previous, process.version(), subject, plain -> cipher.encrypt(subject, plain));
     }
 }
