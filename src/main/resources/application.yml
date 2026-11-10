@@ -245,6 +245,7 @@ app:
     subscriptions-enabled: ${EVENTSTORE_SUBSCRIPTIONS_ENABLED:true}
     resubscribe-delay: 5s
     operation-timeout: 5s
+    max-processing-attempts: 5
   privacy:
     # vault (produção) | local (somente desenvolvimento/testes)
     key-provider: ${PRIVACY_KEY_PROVIDER:vault}
