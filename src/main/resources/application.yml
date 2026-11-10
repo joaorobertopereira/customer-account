@@ -111,6 +111,9 @@ resilience4j:
         permitted-number-of-calls-in-half-open-state: 3
 
 app:
+  idempotency:
+    ttl: 24h
+    max-request-bytes: 1048576
   security:
     # acr exigido para administração do tenant (MFA). Vazio = não exige (dev). Produção: 2.
     tenant-admin-acr-values: []

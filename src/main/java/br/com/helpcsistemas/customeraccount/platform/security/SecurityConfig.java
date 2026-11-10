@@ -1,10 +1,12 @@
 package br.com.helpcsistemas.customeraccount.platform.security;
 
 import br.com.helpcsistemas.customeraccount.shared.security.SubjectPrincipalConverter;
+import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authorization.AuthorizationDecision;
@@ -17,7 +19,9 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Resource server stateless. Autorização por escopo OAuth2 (concedido ao client do tenant no Keycloak) e
@@ -46,7 +50,14 @@ class SecurityConfig {
     };
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, SecurityProperties properties) throws Exception {
+    SecurityFilterChain securityFilterChain(
+            HttpSecurity http,
+            SecurityProperties properties,
+            MongoTemplate mongo,
+            IdempotencyProperties idempotencyProperties,
+            JsonMapper json,
+            Clock clock)
+            throws Exception {
         // API stateless com Bearer token: CSRF não se aplica.
         return http.csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -106,6 +117,8 @@ class SecurityConfig {
                         .denyAll())
                 .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtConverter())))
                 .addFilterAfter(new TenantMdcFilter(), BearerTokenAuthenticationFilter.class)
+                .addFilterAfter(
+                        new IdempotencyFilter(mongo, idempotencyProperties, json, clock), AuthorizationFilter.class)
                 .build();
     }
 
