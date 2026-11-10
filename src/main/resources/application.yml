@@ -23,6 +23,14 @@ spring:
     # Credenciais SMTP (produção) via SPRING_MAIL_USERNAME / SPRING_MAIL_PASSWORD.
     host: ${MAIL_HOST:localhost}
     port: ${MAIL_PORT:1025}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
   security:
     oauth2:
       resourceserver:

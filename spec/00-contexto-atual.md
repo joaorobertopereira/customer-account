@@ -84,6 +84,8 @@ ser `public`; `@ConfigurationProperties` são excluídos).
   com finalidades do tenant e consentimentos vigentes. O legado `customer:read` continua como alias de leitura completa.
 - Novo vínculo entre tenants exige aprovação do titular; desvínculo mantém a pessoa e os demais vínculos, limpa
   projeções por tenant e não restaura dados de gerações/vínculos anteriores.
+- Fase 5 iniciada: Kafka KRaft local (`kafka:9092` no compose), `spring-kafka` com producer `acks=all` e idempotência,
+  SASL/SCRAM sobre TLS no perfil de produção e container Kafka compartilhado nos testes de integração.
 - Rotas públicas hoje: health/info, OpenAPI. Qualquer rota pública nova precisa de autenticação própria
   (assinatura/tokens) e entrar explicitamente no `SecurityConfig`.
 

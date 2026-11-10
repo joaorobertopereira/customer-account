@@ -23,11 +23,13 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.mongodb.MongoDBContainer;
+import org.testcontainers.utility.DockerImageName;
 
 /**
- * Base dos testes de integração: KurrentDB e MongoDB reais (containers compartilhados por todas as classes, um único
- * contexto Spring). As subclasses usam {@code @Testcontainers(disabledWithoutDocker = true)}.
+ * Base dos testes de integração: KurrentDB, MongoDB, Kafka e Mailpit reais (containers compartilhados por todas as
+ * classes, um único contexto Spring). As subclasses usam {@code @Testcontainers(disabledWithoutDocker = true)}.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -37,6 +39,9 @@ abstract class IntegrationTestSupport {
     static final Duration EVENTUAL = Duration.ofSeconds(15);
 
     static final MongoDBContainer MONGO = new MongoDBContainer("mongo:8.0");
+
+    static final KafkaContainer KAFKA =
+            new KafkaContainer(DockerImageName.parse(System.getProperty("kafka.image", "apache/kafka:4.1.1")));
 
     static final GenericContainer<?> KURRENTDB = new GenericContainer<>(
                     System.getProperty("kurrentdb.image", "kurrentplatform/kurrentdb:25.1"))
@@ -55,6 +60,7 @@ abstract class IntegrationTestSupport {
     static {
         MONGO.start();
         KURRENTDB.start();
+        KAFKA.start();
         MAILPIT.start();
     }
 
@@ -64,6 +70,7 @@ abstract class IntegrationTestSupport {
         registry.add(
                 "app.eventstore.connection-string",
                 () -> "kurrentdb://%s:%d?tls=false".formatted(KURRENTDB.getHost(), KURRENTDB.getMappedPort(2113)));
+        registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
         registry.add("spring.mail.host", MAILPIT::getHost);
         registry.add("spring.mail.port", () -> MAILPIT.getMappedPort(1025));
     }
