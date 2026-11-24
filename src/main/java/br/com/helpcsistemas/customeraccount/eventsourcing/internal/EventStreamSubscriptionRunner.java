@@ -133,7 +133,7 @@ class EventStreamSubscriptionRunner implements SmartLifecycle, SubscriptionAdmin
         }
         var name = subscriber.subscriptionName();
         try {
-            var checkpoint = checkpoints.load(name);
+            var checkpoint = checkpoints.loadOrInherit(name, subscriber.inheritsCheckpointFrom());
             var options = SubscribeToAllOptions.get()
                     .filter(SubscriptionFilter.newBuilder()
                             .addStreamNamePrefix(subscriber.streamPrefix())

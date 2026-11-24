@@ -92,6 +92,9 @@ customer/
   reprocessa todo o histórico. Só as projeções (`customer-read-model-v1`, `consent-views-v1`,
   `verification-read-model-v1`) são reconstruíveis; subscribers com efeitos externos recusam. Reconstrua primeiro a de
   clientes (consentimento e validações consultam o vínculo nela) e use uma instância com subscriptions habilitadas.
+  O webhook `consent.revoked` sai de `consent-revocation-notifier-v1`, separado da projeção, para que reconstruir
+  `consent-views-v1` não reenvie avisos antigos aos tenants. Na primeira subida ele herda o checkpoint da projeção
+  (`EventStreamSubscriber.inheritsCheckpointFrom`) e não reprocessa o histórico.
 
 ---
 
