@@ -132,6 +132,9 @@ app:
       client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET:}
   subject-link:
     mail-from: ${SUBJECT_LINK_MAIL_FROM:no-reply@helpcsistemas.com.br}
+  customer:
+    # Intervalo (ms) da expiração de solicitações de vínculo entre tenants (validade de 7 dias).
+    link-expiration-delay-ms: 60000
   secrets:
     # vault (produção) | local (somente desenvolvimento/testes)
     provider: ${SECRETS_PROVIDER:vault}

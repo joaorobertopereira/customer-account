@@ -529,6 +529,8 @@ providerTransactionId, policyVersion, failover, requestedAt, concludedAt}}` — 
 | `app.verification.providers.*` | Liga/desliga e URL/timeout de `own-email-otp`, `twilio-verify`, `twilio-lookup`, `zerobounce` |
 | `app.verification.hosted-providers.providers.<id>.*` | Liga/desliga `legitimuz`/`netrin` (`VERIFICATION_LEGITIMUZ_ENABLED`, `VERIFICATION_NETRIN_ENABLED`); URL, método genérico, mapeamento de campos e callbacks (desabilitado por padrão) |
 | `app.verification.callback-inbox.interval` | Frequência de processamento de callbacks autenticados (padrão 2s) |
+| `app.verification.callback-inbox.batch-size` | Callbacks reivindicados por execução (padrão 50) |
+| `app.customer.link-expiration-delay-ms` | Intervalo da expiração de solicitações de vínculo entre tenants (padrão 60000) |
 | `app.verification.expiration-check-interval` | Frequência de expiração de desafios/links e validade de aprovação (padrão 30s) |
 | `app.simulated-hosted.*` | URL e segredo do provider local de demonstração (não usar em produção) |
 | `app.secrets.*` | `provider` (`vault`/`local`), `cache-ttl`, `vault.{uri,token,token-file,kv-mount,base-path}` |
