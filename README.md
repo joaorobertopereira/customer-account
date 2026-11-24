@@ -549,7 +549,7 @@ providerTransactionId, policyVersion, failover, requestedAt, concludedAt}}` — 
 | **4a (core implementado)** | Passkey/passwordless, vínculo por OTP ao e-mail verificado, autoatendimento do titular, MFA TOTP/LoA 2 de admins — [spec](spec/fase-4a-autenticacao-titular-admin.md). Pendente: validação manual de passkey no navegador; step-up biométrico é opcional e não implementado |
 | **4b (implementado)** | Módulo `consent`, vínculo entre tenants aprovado pelo titular, desvínculo, minimização por escopo/finalidade e webhooks — [spec](spec/fase-4b-consentimento.md) |
 | **5 (em andamento: T1)** | Broker Kafka KRaft no compose, UI opcional `--profile debug`, configuração de produtor com idempotência, SASL/SCRAM+TLS em produção e Testcontainers — [spec](spec/fase-5-integracao-kafka-portal.md). Pendentes: eventos públicos/outbox, comandos de tenant e portal LGPD |
-| Transversal | Idempotência, rate limit, parking, snapshots, upcasters, rotação de KEK, auditoria imutável — [spec](spec/fase-t-transversal.md) |
+| **Transversal (parcial)** | Feito: parking de eventos envenenados e snapshots (ver seção 1). Pendentes: idempotência, rate limit, upcasters, rotação de KEK, auditoria imutável — [spec](spec/fase-t-transversal.md) |
 
 Escopo de integrações reduzido a **Legitimuz e Netrin** (decisões em [spec/README.md](spec/README.md)).
 
