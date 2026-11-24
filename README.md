@@ -524,7 +524,7 @@ providerTransactionId, policyVersion, failover, requestedAt, concludedAt}}` — 
 | `app.privacy.data-key-cache-ttl` | TTL do cache de DEKs em memória (trade-off latência × janela pós-shredding) |
 | `app.verification.simulated-providers-enabled` | Provedores de sandbox (`true` em local/docker/test; **sempre `false` em produção**) |
 | `app.verification.providers.*` | Liga/desliga e URL/timeout de `own-email-otp`, `twilio-verify`, `twilio-lookup`, `zerobounce` |
-| `app.verification.hosted-providers.*` | Liga/desliga `legitimuz`/`netrin`; URL, método genérico, mapeamento de campos e callbacks (desabilitado por padrão) |
+| `app.verification.hosted-providers.providers.<id>.*` | Liga/desliga `legitimuz`/`netrin` (`VERIFICATION_LEGITIMUZ_ENABLED`, `VERIFICATION_NETRIN_ENABLED`); URL, método genérico, mapeamento de campos e callbacks (desabilitado por padrão) |
 | `app.verification.callback-inbox.interval` | Frequência de processamento de callbacks autenticados (padrão 2s) |
 | `app.verification.expiration-check-interval` | Frequência de expiração de desafios/links e validade de aprovação (padrão 30s) |
 | `app.simulated-hosted.*` | URL e segredo do provider local de demonstração (não usar em produção) |
