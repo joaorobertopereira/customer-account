@@ -10,6 +10,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -30,19 +31,19 @@ class MongoConsentProjection implements ConsentProjection {
     public void save(
             UUID customer, TenantId tenant, long version, java.time.Instant linkedAt, List<ConsentGranted> granted) {
         var id = customer + ":" + tenant.value();
-        var current = mongo.findById(id, Document.class, COLLECTION);
-        if (current != null && current.version() > version) {
-            return;
+        // Upsert condicionado à versão: revisão antiga nunca sobrescreve uma mais nova (inclusive entre instâncias).
+        var query = Query.query(Criteria.where("_id").is(id).and("version").lte(version));
+        var update = new Update()
+                .set("customerId", customer.toString())
+                .set("tenantId", tenant.value())
+                .set("version", version)
+                .set("linkedAt", linkedAt.toString())
+                .set("encryptedConsents", cipher.encrypt(customer.toString(), json.writeValueAsBytes(granted)));
+        try {
+            mongo.upsert(query, update, COLLECTION);
+        } catch (org.springframework.dao.DuplicateKeyException ex) {
+            // já existe revisão mais nova
         }
-        mongo.save(
-                new Document(
-                        id,
-                        customer.toString(),
-                        tenant.value(),
-                        version,
-                        linkedAt.toString(),
-                        cipher.encrypt(customer.toString(), json.writeValueAsBytes(granted))),
-                COLLECTION);
     }
 
     @Override
@@ -57,6 +58,11 @@ class MongoConsentProjection implements ConsentProjection {
             criteria = criteria.and("linkedAt").ne(currentGeneration.toString());
         }
         mongo.remove(Query.query(criteria), COLLECTION);
+    }
+
+    @Override
+    public void clear() {
+        mongo.remove(new Query(), COLLECTION);
     }
 
     @Override

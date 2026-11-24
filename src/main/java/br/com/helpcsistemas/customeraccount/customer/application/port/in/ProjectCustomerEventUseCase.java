@@ -6,4 +6,7 @@ import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerEvent;
 public interface ProjectCustomerEventUseCase {
 
     void project(CustomerEvent event, long revision);
+
+    /** Descarta o read model para que seja reconstruído a partir do histórico. */
+    void reset();
 }

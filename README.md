@@ -4,7 +4,7 @@ Core **multi-tenant de dados pessoais** compartilhado por várias aplicações (
 Spring Boot 4.1 + Spring Modulith 2.1, **CQRS + Event Sourcing** com **KurrentDB** (escrita) e **MongoDB** (leitura,
 via serviço de projeção), segurança e **LGPD by design**, observabilidade com **OpenTelemetry**.
 
-> Status: **Fases 1, 2a, 2b, 4a e 4b**, além da base genérica da 3a, implementadas.
+> Status: **Fases 1, 2a, 2b, 4a e 4b**, além da base genérica da 3a, implementadas; **fase 5 iniciada (infra Kafka/T1)**.
 > A validação interativa de passkey no navegador ainda não foi executada; o step-up biométrico opcional também
 > não faz parte desta entrega. A configuração real da Legitimuz/Netrin depende da documentação operacional de cada empresa.
 > Ver [Roadmap](#9-roadmap).
@@ -37,7 +37,7 @@ flowchart LR
 |---|---|---|
 | `shared` | Shared kernel: `EventSourcedAggregate`, `TenantId`, exceções, Problem Details | — |
 | `platform` | Segurança (resource server, escopos, tenant do token), logging de fluxo, OTel, OpenAPI, `Clock` | shared |
-| `eventsourcing` | API neutra `EventStore`/`EventStreamSubscriber` sobre KurrentDB, checkpoints, propagação de trace | shared |
+| `eventsourcing` | API neutra `EventStore`/`EventStreamSubscriber` sobre KurrentDB, checkpoints, snapshots (Mongo), parking de eventos com falha, reconstrução de projeções, propagação de trace | shared |
 | `privacy` | `PersonalDataCipher` (AES-256-GCM por titular), `BlindIndex` (HMAC), `CryptoShredder` | shared |
 | `customer` | Domínio da pessoa, comandos, projeção, consultas, eliminação e vínculos aprovados pelo titular. API pública: `CustomerDirectory`, `CustomerDataAccess`, `CustomerTenantUnlinked` | shared, eventsourcing, privacy, tenant |
 | `consent` | Finalidades por tenant, consentimentos event-sourced cifrados, projeção e minimização. API pública: `ConsentDirectory` | shared, eventsourcing, privacy, customer, tenant |
@@ -71,6 +71,27 @@ customer/
 
 > Escala: `app.eventstore.subscriptions-enabled` permite separar instâncias **API** (false) de instâncias
 > **projetoras** (true) com o mesmo artefato.
+
+#### Snapshots, parking e reconstrução de projeções
+
+- **Snapshots a cada 10 eventos**: ao gravar, se a contagem de eventos do stream cruza um múltiplo de 10, o estado do
+  agregado (`Customer`, `ConsentLedger`, `VerificationProcess`, `TenantVerificationPolicy`) é salvo em
+  `eventstore_snapshots` (MongoDB, um documento por stream). Ao carregar, o repositório restaura o snapshot e aplica só
+  a cauda do stream; sem snapshot utilizável (ausente, schema antigo, ilegível) cai no replay completo. O conteúdo é
+  cifrado com a chave do titular, então o crypto-shredding também inutiliza o snapshot. Mudou o formato do estado de um
+  agregado? Incremente `AggregateSnapshots.SCHEMA_VERSION`.
+- **Projeções idempotentes por versão**: `customer_views` e `consent_views` são gravadas com upsert condicionado à
+  versão; uma revisão antiga nunca sobrescreve uma mais nova, mesmo com várias instâncias.
+- **Parking de eventos envenenados**: após `app.eventstore.max-processing-attempts` (5) falhas consecutivas no mesmo
+  evento, a subscription o guarda em `eventstore_parked_events`, avança o checkpoint e segue. Operação (role `admin`):
+  `GET /api/v1/admin/parked-events`, `POST /api/v1/admin/parked-events/{id}/reprocess`,
+  `DELETE /api/v1/admin/parked-events/{id}`. O evento estacionado é pulado, então projeções devem ser idempotentes por
+  revisão.
+- **Reconstrução de projeções**: `GET /api/v1/admin/subscriptions` lista as subscriptions;
+  `POST /api/v1/admin/subscriptions/{name}/rebuild` (202) para a subscription, descarta o read model e o checkpoint e
+  reprocessa todo o histórico. Só as projeções (`customer-read-model-v1`, `consent-views-v1`,
+  `verification-read-model-v1`) são reconstruíveis; subscribers com efeitos externos recusam. Reconstrua primeiro a de
+  clientes (consentimento e validações consultam o vínculo nela) e use uma instância com subscriptions habilitadas.
 
 ---
 

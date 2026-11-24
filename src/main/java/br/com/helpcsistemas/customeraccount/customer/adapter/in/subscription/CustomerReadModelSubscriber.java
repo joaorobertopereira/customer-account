@@ -11,7 +11,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * Serviço de projeção: consome os eventos de {@code customer-*} e mantém o read model no MongoDB. Para reconstruir o
- * read model, apague a coleção e o checkpoint (ou mude o nome da subscription) e reinicie.
+ * read model, use {@code POST /api/v1/admin/subscriptions/customer-read-model-v1/rebuild} (role {@code admin}) numa
+ * instância com subscriptions habilitadas: o endpoint interrompe a subscription, descarta o read model e o checkpoint
+ * e reprocessa todo o histórico. Reconstrua esta projeção antes das de consentimento e validação, que consultam o
+ * vínculo nela.
  */
 @Component
 class CustomerReadModelSubscriber implements EventStreamSubscriber {
@@ -29,6 +32,16 @@ class CustomerReadModelSubscriber implements EventStreamSubscriber {
     @Override
     public String subscriptionName() {
         return "customer-read-model-v1";
+    }
+
+    @Override
+    public boolean rebuildable() {
+        return true;
+    }
+
+    @Override
+    public void resetProjection() {
+        projection.reset();
     }
 
     @Override

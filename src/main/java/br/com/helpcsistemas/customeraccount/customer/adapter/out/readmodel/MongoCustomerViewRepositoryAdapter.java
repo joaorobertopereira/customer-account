@@ -19,11 +19,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -79,16 +81,47 @@ class MongoCustomerViewRepositoryAdapter implements CustomerViewRepositoryPort {
 
     @Override
     public void save(CustomerView view) {
-        mongo.save(toDocument(view), COLLECTION);
+        upsertIfNewer(toDocument(view));
         log.atDebug()
                 .addKeyValue("customer.id", view.id())
                 .addKeyValue("customer.version", view.version())
                 .log("Read model atualizado");
     }
 
+    /**
+     * Upsert condicionado à versão: com várias instâncias ou reprocessamento, uma revisão antiga nunca sobrescreve
+     * uma mais nova (o filtro falha e o upsert esbarra na chave duplicada, que é ignorada).
+     */
+    private void upsertIfNewer(CustomerDocument doc) {
+        var query =
+                Query.query(Criteria.where("_id").is(doc.id()).and("version").lt(doc.version()));
+        var update = new Update()
+                .set("version", doc.version())
+                .set("status", doc.status())
+                .set("cpfIndex", doc.cpfIndex())
+                .set("emailIndex", doc.emailIndex())
+                .set("mobilePhoneIndex", doc.mobilePhoneIndex())
+                .set("tenants", doc.tenants())
+                .set("emailVerified", doc.emailVerified())
+                .set("mobilePhoneVerified", doc.mobilePhoneVerified())
+                .set("createdAt", doc.createdAt())
+                .set("updatedAt", doc.updatedAt())
+                .set("encryptedProfile", doc.encryptedProfile());
+        try {
+            mongo.upsert(query, update, COLLECTION);
+        } catch (DuplicateKeyException ex) {
+            log.atDebug().addKeyValue("customer.id", doc.id()).log("Read model já está em revisão igual ou mais nova");
+        }
+    }
+
     @Override
     public void deleteById(CustomerId id) {
         mongo.remove(Query.query(Criteria.where("_id").is(id.toString())), COLLECTION);
+    }
+
+    @Override
+    public void deleteAll() {
+        mongo.remove(new Query(), COLLECTION);
     }
 
     private CustomerDocument toDocument(CustomerView view) {

@@ -21,7 +21,7 @@ Resumo para retomar o trabalho sem reler o projeto inteiro.
 |---|---|---|
 | `shared` (OPEN) | `EventSourcedAggregate`, `TenantId`, `Actor`, exceções de domínio, Problem Details | — |
 | `platform` | Segurança (resource server, escopos, `TenantId`/`Actor` resolvidos do token), `FlowLoggingAspect`, OTel, OpenAPI, `Clock`, `@EnableScheduling` | — |
-| `eventsourcing` | `EventStore`, `NewEvent`, `StoredEvent`, `ExpectedRevision`, `EventStreamSubscriber` (catch-up em `$all` com checkpoint no Mongo, `traceparent` nos metadados) | todas |
+| `eventsourcing` | `EventStore`, `NewEvent`, `StoredEvent`, `ExpectedRevision`, `EventStreamSubscriber` (catch-up em `$all` com checkpoint no Mongo, `traceparent` nos metadados), `AggregateSnapshots`/`SnapshotStore` (snapshot a cada 10 eventos no Mongo), `ParkedEvents` e `SubscriptionAdmin` (parking e rebuild de projeções) | todas |
 | `privacy` | `PersonalDataCipher` (AES-GCM por titular, DEK embrulhada no Vault Transit), `BlindIndex` (HMAC), `CryptoShredder` | todas |
 | `secrets` | `SecretStore.read(path)` → Vault KV v2 (`secret/customer-account/<path>`) com cache; `local` em dev/test | `SecretStore` |
 | `customer` | Agregado `Customer` (ES), reserva de CPF, vínculo/desvínculo de tenant com aceite, perfil de titular e read model `customer_views` | `CustomerDirectory`, `CustomerDataAccess`, `CustomerSnapshot`, `CustomerErasureCompleted`, `CustomerTenantUnlinked` |
@@ -84,6 +84,8 @@ ser `public`; `@ConfigurationProperties` são excluídos).
   com finalidades do tenant e consentimentos vigentes. O legado `customer:read` continua como alias de leitura completa.
 - Novo vínculo entre tenants exige aprovação do titular; desvínculo mantém a pessoa e os demais vínculos, limpa
   projeções por tenant e não restaura dados de gerações/vínculos anteriores.
+- Fase 5 iniciada: Kafka KRaft local (`kafka:9092` no compose), `spring-kafka` com producer `acks=all` e idempotência,
+  SASL/SCRAM sobre TLS no perfil de produção e container Kafka compartilhado nos testes de integração.
 - Rotas públicas hoje: health/info, OpenAPI. Qualquer rota pública nova precisa de autenticação própria
   (assinatura/tokens) e entrar explicitamente no `SecurityConfig`.
 

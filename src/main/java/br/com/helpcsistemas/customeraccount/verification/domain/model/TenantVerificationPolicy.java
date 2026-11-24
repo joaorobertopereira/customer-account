@@ -23,6 +23,11 @@ public class TenantVerificationPolicy extends EventSourcedAggregate<Verification
     private final TenantId tenantId;
     private final Map<VerificationType, VerificationRule> rules = new EnumMap<>(VerificationType.class);
 
+    /** Usado apenas pela restauração de snapshot (campos preenchidos por reflexão). */
+    private TenantVerificationPolicy() {
+        this.tenantId = null;
+    }
+
     private TenantVerificationPolicy(TenantId tenantId) {
         this.tenantId = Objects.requireNonNull(tenantId, "tenantId");
     }

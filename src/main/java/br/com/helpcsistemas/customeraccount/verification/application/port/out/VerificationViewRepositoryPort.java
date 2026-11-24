@@ -18,6 +18,9 @@ public interface VerificationViewRepositoryPort {
 
     void deleteByCustomer(UUID customerId);
 
+    /** Remove todo o read model (usado na reconstrução da projeção). */
+    void deleteAll();
+
     void deleteByTenantAndCustomer(TenantId tenant, UUID customerId, Instant removedAt);
 
     /** Validações aguardando confirmação cujo prazo já venceu (candidatas à expiração). */

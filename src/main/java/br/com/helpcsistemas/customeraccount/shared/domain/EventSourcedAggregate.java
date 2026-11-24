@@ -27,6 +27,15 @@ public abstract class EventSourcedAggregate<E extends DomainEvent> {
         this.version = version;
     }
 
+    /**
+     * Retoma um agregado restaurado de snapshot: aplica apenas os eventos posteriores ao snapshot. {@code version} é
+     * a revisão do último evento aplicado (ou a do próprio snapshot, se a cauda for vazia).
+     */
+    public final void resumeFrom(List<? extends E> tail, long version) {
+        pendingEvents.clear();
+        replay(tail, version);
+    }
+
     public final long version() {
         return version;
     }

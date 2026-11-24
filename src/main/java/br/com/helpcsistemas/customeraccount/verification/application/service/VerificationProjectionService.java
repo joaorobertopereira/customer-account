@@ -67,6 +67,12 @@ class VerificationProjectionService implements ProjectVerificationEventUseCase {
     }
 
     @Override
+    public void reset() {
+        views.deleteAll();
+        log.atWarn().log("Read model de validações descartado para reconstrução");
+    }
+
+    @Override
     public void eraseCustomerData(UUID customerId) {
         views.deleteByCustomer(customerId);
         hostedSessions.deleteByCustomer(customerId);

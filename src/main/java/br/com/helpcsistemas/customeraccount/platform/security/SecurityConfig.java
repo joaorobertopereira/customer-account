@@ -110,6 +110,9 @@ class SecurityConfig {
                         .hasAuthority(SCOPE_VERIFICATION_WRITE)
                         .requestMatchers(HttpMethod.GET, "/api/v1/verifications", VERIFICATIONS)
                         .hasAuthority(SCOPE_VERIFICATION_READ)
+                        // Operação da plataforma (eventos estacionados): role admin.
+                        .requestMatchers("/api/v1/admin/**")
+                        .hasAuthority(ROLE_ADMIN)
                         // Administração do tenant: role tenant-admin do próprio console + login forte (acr).
                         .requestMatchers("/api/v1/tenant/**")
                         .access(tenantAdminAccess(properties.tenantAdminAcrValues()))

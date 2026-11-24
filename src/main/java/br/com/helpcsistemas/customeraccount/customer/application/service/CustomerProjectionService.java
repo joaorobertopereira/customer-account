@@ -1,6 +1,7 @@
 package br.com.helpcsistemas.customeraccount.customer.application.service;
 
 import br.com.helpcsistemas.customeraccount.customer.application.port.in.ProjectCustomerEventUseCase;
+import br.com.helpcsistemas.customeraccount.customer.application.port.out.CustomerRepositoryPort;
 import br.com.helpcsistemas.customeraccount.customer.application.port.out.CustomerViewRepositoryPort;
 import br.com.helpcsistemas.customeraccount.customer.application.query.CustomerView;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.AddressChanged;
@@ -28,9 +29,11 @@ class CustomerProjectionService implements ProjectCustomerEventUseCase {
     private static final Logger log = LoggerFactory.getLogger(CustomerProjectionService.class);
 
     private final CustomerViewRepositoryPort views;
+    private final CustomerRepositoryPort customers;
 
-    CustomerProjectionService(CustomerViewRepositoryPort views) {
+    CustomerProjectionService(CustomerViewRepositoryPort views, CustomerRepositoryPort customers) {
         this.views = views;
+        this.customers = customers;
     }
 
     @Override
@@ -43,10 +46,36 @@ class CustomerProjectionService implements ProjectCustomerEventUseCase {
             }
             default ->
                 views.findById(event.customerId())
-                        .filter(view -> revision > view.version())
-                        .map(view -> apply(view, event, revision))
-                        .ifPresentOrElse(views::save, () -> skipped(event, revision));
+                        .ifPresentOrElse(
+                                view -> {
+                                    if (revision > view.version()) {
+                                        views.save(apply(view, event, revision));
+                                    } else {
+                                        skipped(event, revision);
+                                    }
+                                },
+                                () -> missingView(event, revision));
         }
+    }
+
+    @Override
+    public void reset() {
+        views.deleteAll();
+        log.atWarn().log("Read model de clientes descartado para reconstrução");
+    }
+
+    /**
+     * Evento posterior ao registro sem read model: ou o titular foi eliminado (legítimo: nada a projetar) ou o read
+     * model foi perdido. No segundo caso falha de propósito, em vez de descartar o evento em silêncio: após as
+     * tentativas o evento é estacionado (parking) e a projeção pode ser reconstruída.
+     */
+    private void missingView(CustomerEvent event, long revision) {
+        var active = customers.findById(event.customerId()).filter(c -> c.status() == CustomerStatus.ACTIVE);
+        if (active.isPresent()) {
+            throw new IllegalStateException("Read model ausente para o cliente " + event.customerId() + " (revisão "
+                    + revision + "); reconstrua a projeção customer-read-model-v1");
+        }
+        skipped(event, revision);
     }
 
     private void create(CustomerRegistered e, long revision) {
