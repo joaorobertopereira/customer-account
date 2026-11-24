@@ -1,6 +1,10 @@
 package br.com.helpcsistemas.customeraccount.eventsourcing.internal;
 
 import br.com.helpcsistemas.customeraccount.eventsourcing.EventStreamSubscriber;
+import br.com.helpcsistemas.customeraccount.eventsourcing.StoredEvent;
+import br.com.helpcsistemas.customeraccount.eventsourcing.SubscriptionAdmin;
+import br.com.helpcsistemas.customeraccount.shared.domain.BusinessRuleException;
+import br.com.helpcsistemas.customeraccount.shared.domain.ResourceNotFoundException;
 import io.kurrent.dbclient.KurrentDBClient;
 import io.kurrent.dbclient.Position;
 import io.kurrent.dbclient.ResolvedEvent;
@@ -26,7 +30,7 @@ import org.springframework.stereotype.Component;
  * recriada a partir do último checkpoint (retry com atraso fixo).
  */
 @Component
-class EventStreamSubscriptionRunner implements SmartLifecycle {
+class EventStreamSubscriptionRunner implements SmartLifecycle, SubscriptionAdmin {
 
     private static final Logger log = LoggerFactory.getLogger(EventStreamSubscriptionRunner.class);
 
@@ -36,7 +40,13 @@ class EventStreamSubscriptionRunner implements SmartLifecycle {
     private final RecordedEventMapper mapper;
     private final TraceContextPropagation tracing;
     private final EventStoreProperties properties;
+    private final ParkedEventStore parked;
     private final Map<String, Subscription> active = new ConcurrentHashMap<>();
+    /** Falhas consecutivas por subscription no mesmo evento; sobrevive às re-assinaturas (o Listener é recriado). */
+    private final Map<String, FailureStreak> streaks = new ConcurrentHashMap<>();
+    /** Geração por subscription: uma reconstrução invalida listeners antigos, que passam a ignorar eventos. */
+    private final Map<String, Long> generations = new ConcurrentHashMap<>();
+
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             Thread.ofVirtual().name("eventstore-subscriptions-", 0).factory());
     private volatile boolean running;
@@ -47,7 +57,9 @@ class EventStreamSubscriptionRunner implements SmartLifecycle {
             SubscriptionCheckpointStore checkpoints,
             RecordedEventMapper mapper,
             TraceContextPropagation tracing,
-            EventStoreProperties properties) {
+            EventStoreProperties properties,
+            ParkedEventStore parked) {
+        this.parked = parked;
         this.client = client;
         this.subscribers = subscribers;
         this.checkpoints = checkpoints;
@@ -80,8 +92,43 @@ class EventStreamSubscriptionRunner implements SmartLifecycle {
         return running;
     }
 
+    public List<Info> list() {
+        return subscribers.stream()
+                .map(s -> new Info(
+                        s.subscriptionName(),
+                        s.streamPrefix(),
+                        s.rebuildable(),
+                        active.containsKey(s.subscriptionName())))
+                .toList();
+    }
+
+    public void rebuild(String name) {
+        var subscriber = subscribers.stream()
+                .filter(s -> s.subscriptionName().equals(name))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("SUBSCRIPTION_NOT_FOUND", "Subscription inexistente"));
+        if (!subscriber.rebuildable()) {
+            throw new BusinessRuleException(
+                    "SUBSCRIPTION_NOT_REBUILDABLE", "A subscription tem efeitos externos e não pode ser reconstruída");
+        }
+        if (!properties.subscriptionsEnabled() || !running) {
+            throw new BusinessRuleException(
+                    "SUBSCRIPTIONS_DISABLED", "Esta instância não executa subscriptions; use a instância de projeção");
+        }
+        generations.merge(name, 1L, Long::sum);
+        var current = active.remove(name);
+        if (current != null) {
+            current.stop();
+        }
+        streaks.remove(name);
+        subscriber.resetProjection();
+        checkpoints.delete(name);
+        log.atWarn().addKeyValue("subscription.name", name).log("Reconstrução da projeção iniciada");
+        scheduler.execute(() -> subscribe(subscriber));
+    }
+
     private void subscribe(EventStreamSubscriber subscriber) {
-        if (!running) {
+        if (!running || active.containsKey(subscriber.subscriptionName())) {
             return;
         }
         var name = subscriber.subscriptionName();
@@ -121,22 +168,30 @@ class EventStreamSubscriptionRunner implements SmartLifecycle {
         }
     }
 
+    private record FailureStreak(java.util.UUID eventId, int count) {}
+
     private final class Listener extends SubscriptionListener {
 
         private final EventStreamSubscriber subscriber;
         private final String name;
         // Após uma falha, eventos já bufferizados não podem ser processados (quebraria a ordem/idempotência).
         private volatile boolean failed;
+        private final long generation;
 
         Listener(EventStreamSubscriber subscriber) {
             this.subscriber = subscriber;
             this.name = subscriber.subscriptionName();
+            this.generation = generations.getOrDefault(name, 0L);
+        }
+
+        private boolean stale() {
+            return generations.getOrDefault(name, 0L) != generation;
         }
 
         @Override
         public void onEvent(Subscription subscription, ResolvedEvent resolved) {
             var recorded = resolved.getOriginalEvent();
-            if (failed || recorded.getEventType().startsWith("$")) {
+            if (failed || stale() || recorded.getEventType().startsWith("$")) {
                 return;
             }
             var event = mapper.toStored(recorded);
@@ -145,6 +200,7 @@ class EventStreamSubscriptionRunner implements SmartLifecycle {
                 tracing.runInConsumerSpan("subscription " + name, event.metadata(), tags, () -> {
                     subscriber.onEvent(event);
                     checkpoints.save(name, recorded.getPosition());
+                    streaks.remove(name);
                     log.atDebug()
                             .addKeyValue("subscription.name", name)
                             .addKeyValue("event.type", event.type())
@@ -152,6 +208,9 @@ class EventStreamSubscriptionRunner implements SmartLifecycle {
                             .log("Evento processado pela subscription");
                 });
             } catch (RuntimeException ex) {
+                if (parkIfExhausted(event, recorded.getPosition(), ex)) {
+                    return;
+                }
                 failed = true;
                 log.atError()
                         .addKeyValue("subscription.name", name)
@@ -164,6 +223,41 @@ class EventStreamSubscriptionRunner implements SmartLifecycle {
             }
         }
 
+        /**
+         * Conta falhas consecutivas no mesmo evento. Ao atingir o limite, estaciona o evento (com o motivo), avança o
+         * checkpoint e segue: um evento envenenado não trava mais a projeção. Retorna {@code true} se estacionou.
+         */
+        private boolean parkIfExhausted(StoredEvent event, Position position, RuntimeException cause) {
+            var streak = streaks.merge(
+                    name,
+                    new FailureStreak(event.eventId(), 1),
+                    (old, fresh) -> old.eventId().equals(fresh.eventId())
+                            ? new FailureStreak(old.eventId(), old.count() + 1)
+                            : fresh);
+            if (streak.count() < properties.maxProcessingAttempts()) {
+                return false;
+            }
+            try {
+                parked.park(name, event, cause.toString(), streak.count());
+                checkpoints.save(name, position);
+            } catch (RuntimeException parkFailure) {
+                log.atError()
+                        .addKeyValue("subscription.name", name)
+                        .setCause(parkFailure)
+                        .log("Não foi possível estacionar o evento; subscription será reiniciada");
+                return false;
+            }
+            streaks.remove(name);
+            log.atError()
+                    .addKeyValue("subscription.name", name)
+                    .addKeyValue("event.type", event.type())
+                    .addKeyValue("event.id", event.eventId().toString())
+                    .addKeyValue("event.attempts", streak.count())
+                    .setCause(cause)
+                    .log("Evento estacionado (parking) após falhas consecutivas; a subscription segue adiante");
+            return true;
+        }
+
         @Override
         public void onCaughtUp(Subscription subscription, Instant timestamp, Long streamRevision, Position position) {
             log.atInfo().addKeyValue("subscription.name", name).log("Subscription em dia (modo live)");
@@ -171,7 +265,7 @@ class EventStreamSubscriptionRunner implements SmartLifecycle {
 
         @Override
         public void onCancelled(Subscription subscription, Throwable exception) {
-            if (exception == null || failed) {
+            if (exception == null || failed || stale()) {
                 return;
             }
             log.atWarn()

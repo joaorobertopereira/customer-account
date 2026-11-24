@@ -13,4 +13,7 @@ public interface ConsentProjection {
     void removeStale(UUID customer, TenantId tenant, java.time.Instant currentGeneration);
 
     void erase(UUID customer);
+
+    /** Remove todo o read model (usado na reconstrução da projeção). */
+    void clear();
 }

@@ -29,6 +29,10 @@ class SubscriptionCheckpointStore {
         return Optional.ofNullable(doc).map(d -> new Position(d.getLong("commit"), d.getLong("prepare")));
     }
 
+    void delete(String subscriptionName) {
+        mongo.remove(Query.query(Criteria.where("_id").is(subscriptionName)), COLLECTION);
+    }
+
     void save(String subscriptionName, Position position) {
         mongo.upsert(
                 Query.query(Criteria.where("_id").is(subscriptionName)),

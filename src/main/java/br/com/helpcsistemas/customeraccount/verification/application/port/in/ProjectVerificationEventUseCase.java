@@ -10,4 +10,7 @@ public interface ProjectVerificationEventUseCase {
 
     /** Remove dados derivados de um titular eliminado (LGPD). */
     void eraseCustomerData(UUID customerId);
+
+    /** Descarta o read model de validações para que seja reconstruído a partir do histórico. */
+    void reset();
 }

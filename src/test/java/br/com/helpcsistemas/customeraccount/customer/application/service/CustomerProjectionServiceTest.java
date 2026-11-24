@@ -3,6 +3,7 @@ package br.com.helpcsistemas.customeraccount.customer.application.service;
 import static br.com.helpcsistemas.customeraccount.customer.CustomerFixtures.CLOCK;
 import static br.com.helpcsistemas.customeraccount.customer.CustomerFixtures.TENANT_A;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import br.com.helpcsistemas.customeraccount.customer.CustomerFixtures;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerErased;
@@ -15,7 +16,8 @@ import org.junit.jupiter.api.Test;
 class CustomerProjectionServiceTest {
 
     private final InMemoryCustomerViewRepository views = new InMemoryCustomerViewRepository();
-    private final CustomerProjectionService projection = new CustomerProjectionService(views);
+    private final InMemoryCustomerRepository customers = new InMemoryCustomerRepository();
+    private final CustomerProjectionService projection = new CustomerProjectionService(views, customers);
     private final CustomerId id = CustomerId.newId();
 
     @BeforeEach
@@ -47,6 +49,27 @@ class CustomerProjectionServiceTest {
         var view = views.findById(id).orElseThrow();
         assertThat(view.email()).isEqualTo(newEmail);
         assertThat(view.version()).isEqualTo(2);
+    }
+
+    @Test
+    void failsLoudlyWhenReadModelIsMissingForAnActiveCustomer() {
+        customers.save(CustomerFixtures.persistedCustomer(id));
+        views.deleteAll();
+
+        var changed = new EmailChanged(id, TENANT_A, Email.of("nova@example.com"), CLOCK.instant());
+
+        assertThatThrownBy(() -> projection.project(changed, 2))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Read model ausente");
+    }
+
+    @Test
+    void skipsEventsOfUnknownOrErasedCustomersWithoutReadModel() {
+        views.deleteAll(); // titular inexistente/eliminado: nada a projetar
+
+        projection.project(new EmailChanged(id, TENANT_A, Email.of("nova@example.com"), CLOCK.instant()), 2);
+
+        assertThat(views.findById(id)).isEmpty();
     }
 
     @Test

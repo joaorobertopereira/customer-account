@@ -32,4 +32,9 @@ class InMemoryCustomerViewRepository implements CustomerViewRepositoryPort {
     public void deleteById(CustomerId id) {
         views.remove(id);
     }
+
+    @Override
+    public void deleteAll() {
+        views.clear();
+    }
 }

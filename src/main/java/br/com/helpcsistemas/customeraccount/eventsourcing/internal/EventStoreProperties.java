@@ -2,12 +2,14 @@ package br.com.helpcsistemas.customeraccount.eventsourcing.internal;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 /**
  * @param connectionString ex.: {@code kurrentdb://localhost:2113?tls=false}; em produção use TLS e credenciais.
+ * @param maxProcessingAttempts falhas consecutivas no mesmo evento antes de estacioná-lo e seguir adiante.
  * @param subscriptionsEnabled permite separar instâncias de API (false) de instâncias de projeção (true).
  */
 @Validated
@@ -16,4 +18,5 @@ public record EventStoreProperties(
         @NotBlank String connectionString,
         boolean subscriptionsEnabled,
         @NotNull Duration resubscribeDelay,
-        @NotNull Duration operationTimeout) {}
+        @NotNull Duration operationTimeout,
+        @Positive int maxProcessingAttempts) {}

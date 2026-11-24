@@ -28,6 +28,16 @@ class VerificationReadModelSubscriber implements EventStreamSubscriber {
     }
 
     @Override
+    public boolean rebuildable() {
+        return true;
+    }
+
+    @Override
+    public void resetProjection() {
+        projection.reset();
+    }
+
+    @Override
     public String streamPrefix() {
         return VerificationEventCodec.PROCESS_STREAM_PREFIX;
     }

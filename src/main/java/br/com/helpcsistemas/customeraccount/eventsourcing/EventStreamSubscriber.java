@@ -15,4 +15,15 @@ public interface EventStreamSubscriber {
     String streamPrefix();
 
     void onEvent(StoredEvent event);
+
+    /**
+     * Projeções (read models) podem ser reconstruídas do zero: {@link #resetProjection()} limpa o estado derivado e a
+     * subscription reprocessa todo o histórico. Subscribers com efeitos externos (process managers) não são.
+     */
+    default boolean rebuildable() {
+        return false;
+    }
+
+    /** Limpa o estado derivado desta projeção. Só é chamado se {@link #rebuildable()} for verdadeiro. */
+    default void resetProjection() {}
 }

@@ -15,4 +15,7 @@ public interface CustomerViewRepositoryPort {
     void save(CustomerView view);
 
     void deleteById(CustomerId id);
+
+    /** Remove todo o read model (usado na reconstrução da projeção). */
+    void deleteAll();
 }
