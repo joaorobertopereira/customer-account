@@ -150,7 +150,15 @@ docker compose up -d --build
 | Grafana | http://localhost:3000 |
 
 Variáveis úteis (`.env`): `KEYCLOAK_PORT` (porta em uso por outro projeto), `KEYCLOAK_IMAGE=keycloak/keycloak`
-(quay bloqueado), `KURRENTDB_IMAGE`, `MONGO_PASSWORD`, `PRIVACY_BLIND_INDEX_KEY`.
+(quay bloqueado), `KURRENTDB_IMAGE`, `MONGO_PASSWORD`, `PRIVACY_BLIND_INDEX_KEY`, `KAFKA_PORT`.
+
+- **Kafka**: o app lê `KAFKA_BOOTSTRAP_SERVERS` (padrão `localhost:9092`); no compose, `SPRING_KAFKA_BOOTSTRAP_SERVERS`
+  sobrescreve a mesma propriedade. Em produção, `KAFKA_SASL_JAAS_CONFIG` é obrigatória (SASL/SCRAM + TLS).
+- **Vault no compose**: o token da aplicação criado por `docker/vault/init.sh` é periódico (`768h`) e o app não o
+  renova; relê o arquivo do token a cada chamada. Em ambiente que fica de pé mais de 32 dias, recrie o token (ou use
+  um Vault Agent). Em produção a renovação é responsabilidade do agente que grava `VAULT_TOKEN_FILE`.
+- **Keycloak**: o realm declara `customer_id` no user profile (só admin edita). Sem isso o Keycloak 24+ descarta o
+  atributo em silêncio e o vínculo do titular não chega ao token.
 
 Requisições prontas em [http/api.http](http/api.http) (tokens de `tenant-app-a`, `tenant-app-b`).
 
