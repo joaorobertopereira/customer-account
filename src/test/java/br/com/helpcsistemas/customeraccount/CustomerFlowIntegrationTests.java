@@ -122,6 +122,41 @@ class CustomerFlowIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void idempotencyKeyReplaysTheOriginalResponseAndRejectsDifferentBodies() throws Exception {
+        var body = registrationBody("16899535009");
+        var firstResponse = mvc.perform(post("/api/v1/customers")
+                        .with(tenant("tenant-idempotency", "customer:write"))
+                        .header("Idempotency-Key", "customer-register-001")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse();
+
+        var replay = mvc.perform(post("/api/v1/customers")
+                        .with(tenant("tenant-idempotency", "customer:write"))
+                        .header("Idempotency-Key", "customer-register-001")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse();
+
+        assertThat(replay.getContentAsString()).isEqualTo(firstResponse.getContentAsString());
+        assertThat(replay.getHeader("Location")).isEqualTo(firstResponse.getHeader("Location"));
+        var customerId = com.jayway.jsonpath.JsonPath.read(firstResponse.getContentAsString(), "$.id");
+        assertThat(eventStore.readStream("customer-" + customerId)).hasSize(2);
+
+        mvc.perform(post("/api/v1/customers")
+                        .with(tenant("tenant-idempotency", "customer:write"))
+                        .header("Idempotency-Key", "customer-register-001")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body.replace("maria.souza@example.com", "different@example.com")))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+    }
+
+    @Test
     void returnsProblemDetailsWithoutEchoingPersonalData() throws Exception {
         mvc.perform(post("/api/v1/customers")
                         .with(tenant("tenant-a", "customer:write"))

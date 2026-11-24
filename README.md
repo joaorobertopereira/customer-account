@@ -516,9 +516,8 @@ providerTransactionId, policyVersion, failover, requestedAt, concludedAt}}` — 
 |---|---|
 | `app.eventstore.connection-string` | `kurrentdb://...` (produção: TLS + credenciais) |
 | `app.eventstore.subscriptions-enabled` | Liga/desliga projeções nesta instância |
-| `spring.kafka.bootstrap-servers` | Brokers Kafka (`KAFKA_BOOTSTRAP_SERVERS`); dev: `localhost:9092` |
-| `spring.kafka.producer.*` | Publicação confiável: `acks=all`, idempotência habilitada |
-| `spring.kafka.properties.security.protocol` | Produção: `SASL_SSL`; configure `KAFKA_SASL_JAAS_CONFIG` via secret manager |
+| `app.idempotency.ttl` | Retenção das respostas de `POST` idempotentes (padrão 24h) |
+| `app.idempotency.max-request-bytes` | Limite de corpo para requisições com `Idempotency-Key` |
 | `app.privacy.key-provider` | `vault` (padrão) ou `local` (somente dev/teste) |
 | `app.privacy.blind-index-key` | Chave HMAC base64 ≥ 32 bytes (secret manager) |
 | `app.privacy.vault.*` | `uri`, `token` ou `token-file`, `transit-mount`, `key-name`, `timeout` |
@@ -548,8 +547,8 @@ providerTransactionId, policyVersion, failover, requestedAt, concludedAt}}` — 
 | 3b – Canal de status | Token de canal, polling público, push SignalR/SSE — [spec](spec/fase-3b-canal-tempo-real.md) |
 | **4a (core implementado)** | Passkey/passwordless, vínculo por OTP ao e-mail verificado, autoatendimento do titular, MFA TOTP/LoA 2 de admins — [spec](spec/fase-4a-autenticacao-titular-admin.md). Pendente: validação manual de passkey no navegador; step-up biométrico é opcional e não implementado |
 | **4b (implementado)** | Módulo `consent`, vínculo entre tenants aprovado pelo titular, desvínculo, minimização por escopo/finalidade e webhooks — [spec](spec/fase-4b-consentimento.md) |
-| **5 (em andamento: T1)** | Broker Kafka KRaft no compose, UI opcional `--profile debug`, configuração de produtor com idempotência, SASL/SCRAM+TLS em produção e Testcontainers — [spec](spec/fase-5-integracao-kafka-portal.md). Pendentes: eventos públicos/outbox, comandos de tenant e portal LGPD |
-| **Transversal (parcial)** | Feito: parking de eventos envenenados e snapshots (ver seção 1). Pendentes: idempotência, rate limit, upcasters, rotação de KEK, auditoria imutável — [spec](spec/fase-t-transversal.md) |
+| 5 – Integração | Kafka no compose, eventos para tenants, portal do titular (art. 18) — [spec](spec/fase-5-integracao-kafka-portal.md) |
+| Transversal (em andamento) | Idempotência de `POST` com reserva/replay por tenant e TTL de 24h; rate limit, parking, snapshots, upcasters, rotação de KEK e auditoria imutável pendentes — [spec](spec/fase-t-transversal.md) |
 
 Escopo de integrações reduzido a **Legitimuz e Netrin** (decisões em [spec/README.md](spec/README.md)).
 
