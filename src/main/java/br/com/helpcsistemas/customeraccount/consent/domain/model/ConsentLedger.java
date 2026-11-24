@@ -44,13 +44,20 @@ public class ConsentLedger extends EventSourcedAggregate<ConsentEvent> {
                 customerId, tenantId, purpose.code(), purpose.policyVersion(), evidence, linkedAt, clock.instant()));
     }
 
-    public void revoke(String purpose, String reason, Clock clock) {
+    /**
+     * Revoga a finalidade, se concedida. Idempotente: sem consentimento vigente não gera evento.
+     *
+     * @return {@code true} se houve revogação
+     */
+    public boolean revoke(String purpose, String reason, Clock clock) {
         if (reason == null || reason.isBlank() || reason.length() > 2000) {
             throw new InvalidValueException("INVALID_REVOCATION_REASON", "Informe o motivo da revogação");
         }
-        if (granted.containsKey(purpose)) {
-            raise(new ConsentRevoked(customerId, tenantId, purpose, reason, clock.instant()));
+        if (!granted.containsKey(purpose)) {
+            return false;
         }
+        raise(new ConsentRevoked(customerId, tenantId, purpose, reason, clock.instant()));
+        return true;
     }
 
     @Override

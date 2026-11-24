@@ -4,6 +4,7 @@ import br.com.helpcsistemas.customeraccount.customer.CustomerDirectory;
 import br.com.helpcsistemas.customeraccount.customer.CustomerSnapshot;
 import br.com.helpcsistemas.customeraccount.customer.application.port.out.CustomerEmailLookupPort;
 import br.com.helpcsistemas.customeraccount.customer.application.port.out.CustomerRepositoryPort;
+import br.com.helpcsistemas.customeraccount.customer.application.port.out.SubjectBindingRepositoryPort;
 import br.com.helpcsistemas.customeraccount.customer.domain.model.CustomerId;
 import br.com.helpcsistemas.customeraccount.customer.domain.model.CustomerStatus;
 import br.com.helpcsistemas.customeraccount.customer.domain.model.Email;
@@ -20,10 +21,22 @@ class CustomerDirectoryService implements CustomerDirectory {
 
     private final CustomerRepositoryPort repository;
     private final CustomerEmailLookupPort emailLookup;
+    private final SubjectBindingRepositoryPort bindings;
 
-    CustomerDirectoryService(CustomerRepositoryPort repository, CustomerEmailLookupPort emailLookup) {
+    CustomerDirectoryService(
+            CustomerRepositoryPort repository,
+            CustomerEmailLookupPort emailLookup,
+            SubjectBindingRepositoryPort bindings) {
         this.repository = repository;
         this.emailLookup = emailLookup;
+        this.bindings = bindings;
+    }
+
+    @Override
+    public boolean isBoundSubject(String subject, UUID customerId) {
+        return subject != null
+                && customerId != null
+                && bindings.findCustomerId(subject).filter(customerId::equals).isPresent();
     }
 
     @Override

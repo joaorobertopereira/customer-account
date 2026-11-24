@@ -25,11 +25,11 @@ class ConsentLedgerTest {
         var grantedHistory = ledger.pendingEvents();
         var replay = ConsentLedger.rehydrate(customer, tenant, grantedHistory, 0);
         assertThat(replay.granted()).containsKey("contact");
-        replay.revoke("contact", "Holder requested", clock);
+        assertThat(replay.revoke("contact", "Holder requested", clock)).isTrue();
         var all = new ArrayList<ConsentEvent>(grantedHistory);
         all.addAll(replay.pendingEvents());
         assertThat(ConsentLedger.rehydrate(customer, tenant, all, 1).granted()).isEmpty();
-        replay.revoke("contact", "Holder requested", clock);
+        assertThat(replay.revoke("contact", "Holder requested", clock)).isFalse();
         assertThat(replay.pendingEvents()).hasSize(1);
     }
 

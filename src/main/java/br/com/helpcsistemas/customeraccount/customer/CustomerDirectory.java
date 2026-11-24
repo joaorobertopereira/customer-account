@@ -21,4 +21,10 @@ public interface CustomerDirectory {
 
     /** Retorna os vínculos atuais do titular somente após confirmar o vínculo solicitado no event store. */
     Set<TenantId> findLinkedTenantMemberships(TenantId tenant, UUID customerId);
+
+    /**
+     * Confere a identidade autenticada contra o vínculo gravado na confirmação ({@code subject_customer_bindings}),
+     * sem confiar só no claim {@code customer_id} do token.
+     */
+    boolean isBoundSubject(String subject, UUID customerId);
 }

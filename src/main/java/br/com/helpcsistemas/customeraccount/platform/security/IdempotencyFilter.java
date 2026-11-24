@@ -111,7 +111,8 @@ class IdempotencyFilter extends OncePerRequestFilter {
             return;
         }
 
-        var recordId = sha256(tenant + "\n" + key);
+        // A chave vale por tenant, método e rota: a mesma chave em outra operação não pode reproduzir esta resposta.
+        var recordId = sha256(tenant + "\n" + request.getMethod() + "\n" + request.getRequestURI() + "\n" + key);
         var bodyHash = sha256(requestBody);
         var existing = reserve(recordId, bodyHash);
         if (existing != null) {
@@ -123,7 +124,12 @@ class IdempotencyFilter extends OncePerRequestFilter {
         var cachedResponse = new ContentCachingResponseWrapper(response);
         try {
             chain.doFilter(repeatableRequest, cachedResponse);
-            complete(recordId, cachedResponse);
+            if (isRetryable(cachedResponse.getStatus())) {
+                // Falha transitória convertida em resposta pelo handler: libera a chave para o cliente tentar de novo.
+                release(recordId);
+            } else {
+                complete(recordId, cachedResponse);
+            }
             cachedResponse.copyBodyToResponse();
         } catch (IOException | ServletException | RuntimeException ex) {
             try {
@@ -215,6 +221,11 @@ class IdempotencyFilter extends OncePerRequestFilter {
         if (UNREPLAYABLE.equals(state)) {
             log.atError().addKeyValue("idempotency.state", state).log("Resposta excedeu o limite de replay");
         }
+    }
+
+    /** 5xx, 409 (conflito de concorrência) e 429 não são resultado definitivo e não devem ser reproduzidos. */
+    static boolean isRetryable(int status) {
+        return status >= 500 || status == HttpStatus.CONFLICT.value() || status == HttpStatus.TOO_MANY_REQUESTS.value();
     }
 
     private void release(String id) {

@@ -4,6 +4,7 @@ import br.com.helpcsistemas.customeraccount.shared.security.SubjectPrincipalConv
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -56,7 +57,8 @@ class SecurityConfig {
             MongoTemplate mongo,
             IdempotencyProperties idempotencyProperties,
             JsonMapper json,
-            Clock clock)
+            Clock clock,
+            @Value("${app.verification.simulated-providers-enabled:false}") boolean simulatedProvidersEnabled)
             throws Exception {
         // API stateless com Bearer token: CSRF não se aplica.
         return http.csrf(AbstractHttpConfigurer::disable)
@@ -67,8 +69,9 @@ class SecurityConfig {
                         .permitAll()
                         .requestMatchers("/api/v1/provider-callbacks/**")
                         .permitAll()
+                        // Simulação só é pública com os provedores simulados ligados (nunca em prod).
                         .requestMatchers("/dev/hosted-verification/**")
-                        .permitAll()
+                        .access((authentication, context) -> new AuthorizationDecision(simulatedProvidersEnabled))
                         .requestMatchers("/actuator/**")
                         .hasAuthority(ROLE_ADMIN)
                         .requestMatchers(HttpMethod.POST, "/api/v1/me/link", "/api/v1/me/link/otp")

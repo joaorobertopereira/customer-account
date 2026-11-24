@@ -4,6 +4,8 @@ import io.kurrent.dbclient.Position;
 import java.time.Clock;
 import java.util.Optional;
 import org.bson.Document;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Component;
 @Component
 class SubscriptionCheckpointStore {
 
+    private static final Logger log = LoggerFactory.getLogger(SubscriptionCheckpointStore.class);
     static final String COLLECTION = "eventstore_subscription_checkpoints";
 
     private final MongoTemplate mongo;
@@ -27,6 +30,26 @@ class SubscriptionCheckpointStore {
     Optional<Position> load(String subscriptionName) {
         var doc = mongo.findById(subscriptionName, Document.class, COLLECTION);
         return Optional.ofNullable(doc).map(d -> new Position(d.getLong("commit"), d.getLong("prepare")));
+    }
+
+    /**
+     * Checkpoint próprio ou, na primeira execução, o da subscription de origem. O herdado é gravado como próprio para
+     * que uma reconstrução posterior da origem não volte a afetá-lo.
+     */
+    Optional<Position> loadOrInherit(String subscriptionName, Optional<String> inheritFrom) {
+        var own = load(subscriptionName);
+        if (own.isPresent() || inheritFrom.isEmpty()) {
+            return own;
+        }
+        var inherited = load(inheritFrom.get());
+        inherited.ifPresent(position -> {
+            save(subscriptionName, position);
+            log.atInfo()
+                    .addKeyValue("subscription.name", subscriptionName)
+                    .addKeyValue("subscription.inheritedFrom", inheritFrom.get())
+                    .log("Checkpoint herdado na primeira execução");
+        });
+        return inherited;
     }
 
     void delete(String subscriptionName) {

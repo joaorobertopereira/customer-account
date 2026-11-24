@@ -55,6 +55,17 @@ class ConsentServiceTest {
     }
 
     @Test
+    void revokingPurposeNeverGrantedSavesNothing() {
+        when(customers.findLinkedCustomer(tenant, customer))
+                .thenReturn(Optional.of(mock(br.com.helpcsistemas.customeraccount.customer.CustomerSnapshot.class)));
+        when(ledgers.load(customer, tenant)).thenReturn(ConsentLedger.rehydrate(customer, tenant, List.of(), -1));
+
+        service.revoke(tenant, customer, "marketing", "Holder requested");
+
+        verify(ledgers, never()).save(any());
+    }
+
+    @Test
     void unlinkedTenantHasNoAccess() {
         when(customers.linkedAt(tenant, customer)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> service.allowedFields(tenant, customer)).isInstanceOf(ResourceNotFoundException.class);

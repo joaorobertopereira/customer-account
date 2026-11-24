@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -48,7 +49,7 @@ class SimulatedHostedVerificationController {
     }
 
     @PostMapping(value = "/{sessionId}/result", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    ResponseEntity<Void> submit(@PathVariable UUID sessionId, @RequestParam String status) {
+    ResponseEntity<String> submit(@PathVariable UUID sessionId, @RequestParam String status) {
         var body = json.writeValueAsBytes(new SimulatedCallback(
                 UUID.randomUUID().toString(),
                 sessionId.toString(),
@@ -59,15 +60,23 @@ class SimulatedHostedVerificationController {
         var timestamp = Long.toString(clock.instant().getEpochSecond());
         var origin =
                 ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
-        RestClient.create(origin)
-                .post()
-                .uri("/api/v1/provider-callbacks/simulated-hosted")
-                .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Timestamp", timestamp)
-                .header("X-Signature", signer.signature(timestamp, new String(body, StandardCharsets.UTF_8)))
-                .body(body)
-                .retrieve()
-                .toBodilessEntity();
+        try {
+            RestClient.create(origin)
+                    .post()
+                    .uri("/api/v1/provider-callbacks/simulated-hosted")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("X-Timestamp", timestamp)
+                    .header("X-Signature", signer.signature(timestamp, new String(body, StandardCharsets.UTF_8)))
+                    .body(body)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientResponseException ex) {
+            // Mostra ao testador por que o callback simulado foi recusado, em vez de um 500 genérico.
+            return ResponseEntity.status(ex.getStatusCode())
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .body("Callback simulado recusado: HTTP "
+                            + ex.getStatusCode().value());
+        }
         return ResponseEntity.status(303)
                 .location(URI.create("/dev/hosted-verification/" + sessionId))
                 .build();

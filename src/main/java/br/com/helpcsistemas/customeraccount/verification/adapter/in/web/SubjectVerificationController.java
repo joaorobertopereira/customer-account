@@ -53,7 +53,7 @@ class SubjectVerificationController {
 
     private UUID requireLinkedCustomer(SubjectPrincipal principal) {
         var customerId = principal.customerId();
-        if (customerId == null) {
+        if (customerId == null || !customers.isBoundSubject(principal.subject(), customerId)) {
             throw new ResourceNotFoundException("CUSTOMER_NOT_FOUND", "Cliente não encontrado");
         }
         customers

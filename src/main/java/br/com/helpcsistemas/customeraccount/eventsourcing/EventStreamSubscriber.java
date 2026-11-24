@@ -1,5 +1,7 @@
 package br.com.helpcsistemas.customeraccount.eventsourcing;
 
+import java.util.Optional;
+
 /**
  * SPI para consumidores de eventos (projeções, process managers). Cada implementação registrada como bean ganha uma
  * catch-up subscription no {@code $all}, filtrada por prefixo de stream, com checkpoint persistido.
@@ -26,4 +28,13 @@ public interface EventStreamSubscriber {
 
     /** Limpa o estado derivado desta projeção. Só é chamado se {@link #rebuildable()} for verdadeiro. */
     default void resetProjection() {}
+
+    /**
+     * Subscription de onde herdar o checkpoint na primeira execução. Serve para extrair um efeito externo de uma
+     * subscription existente sem reprocessar o histórico: sem checkpoint próprio, a nova subscription começa da
+     * posição da origem (e o grava como seu). Sem checkpoint na origem, começa do início como qualquer outra.
+     */
+    default Optional<String> inheritsCheckpointFrom() {
+        return Optional.empty();
+    }
 }

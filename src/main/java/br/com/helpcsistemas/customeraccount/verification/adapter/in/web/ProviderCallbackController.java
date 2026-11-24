@@ -4,7 +4,6 @@ import br.com.helpcsistemas.customeraccount.shared.domain.ResourceNotFoundExcept
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.HostedProviderCallbackPort;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.HostedSessionRegistryPort;
 import br.com.helpcsistemas.customeraccount.verification.application.port.out.ProviderCallbackInboxPort;
-import br.com.helpcsistemas.customeraccount.verification.application.port.out.VerificationProcessRepositoryPort;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.HostedResult;
 import br.com.helpcsistemas.customeraccount.verification.domain.model.ProviderId;
 import java.security.MessageDigest;
@@ -34,19 +33,16 @@ class ProviderCallbackController {
 
     private final List<HostedProviderCallbackPort> providers;
     private final HostedSessionRegistryPort sessions;
-    private final VerificationProcessRepositoryPort processes;
     private final ProviderCallbackInboxPort inbox;
     private final Clock clock;
 
     ProviderCallbackController(
             List<HostedProviderCallbackPort> providers,
             HostedSessionRegistryPort sessions,
-            VerificationProcessRepositoryPort processes,
             ProviderCallbackInboxPort inbox,
             Clock clock) {
         this.providers = providers;
         this.sessions = sessions;
-        this.processes = processes;
         this.inbox = inbox;
         this.clock = clock;
     }
@@ -74,10 +70,8 @@ class ProviderCallbackController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         var session = sessions.findByProviderSession(id, normalized.sessionId());
-        var tenantId = session.flatMap(reference -> processes
-                        .findById(reference.verificationId())
-                        .map(p -> p.tenantId().value()))
-                .orElse(UNKNOWN_TENANT);
+        // O tenant vem do registro da sessão: nada do event store é lido antes de autenticar o callback.
+        var tenantId = session.map(reference -> reference.tenant().value()).orElse(UNKNOWN_TENANT);
         if (!provider.authenticateCallback(headers.toSingleValueMap(), body, tenantId)) {
             log.atWarn()
                     .addKeyValue("security.event", "provider-callback-rejected")

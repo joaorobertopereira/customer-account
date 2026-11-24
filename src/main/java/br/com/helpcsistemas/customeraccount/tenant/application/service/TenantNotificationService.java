@@ -81,8 +81,21 @@ class TenantNotificationService implements TenantNotifications, DispatchNotifica
     @Override
     public int dispatchDue(int batchSize) {
         var due = queue.claimDue(clock.instant(), batchSize);
-        due.forEach(this::deliver);
+        due.forEach(this::deliverIsolated);
         return due.size();
+    }
+
+    /** Um erro inesperado num item não interrompe o lote: os demais itens já reivindicados seguem sendo entregues. */
+    private void deliverIsolated(QueuedNotification n) {
+        try {
+            deliver(n);
+        } catch (RuntimeException ex) {
+            log.atError()
+                    .addKeyValue("tenant.id", n.tenantId())
+                    .addKeyValue("notification.id", n.eventId())
+                    .setCause(ex)
+                    .log("Erro inesperado ao processar notificação; item volta à fila após a lease");
+        }
     }
 
     private void deliver(QueuedNotification n) {
@@ -93,15 +106,15 @@ class TenantNotificationService implements TenantNotifications, DispatchNotifica
         }
         int attempt = n.attempts() + 1;
         var url = webhook.get().endpoint().url();
-        long timestamp = clock.instant().getEpochSecond();
-        var headers = new LinkedHashMap<String, String>();
-        headers.put(HEADER_EVENT_ID, n.eventId());
-        headers.put(HEADER_EVENT_TYPE, n.eventType());
-        headers.put(HEADER_TIMESTAMP, Long.toString(timestamp));
-        headers.put(HEADER_SIGNATURE, WebhookSignature.sign(webhook.get().secret(), timestamp, n.payload()));
 
         int status;
         try {
+            long timestamp = clock.instant().getEpochSecond();
+            var headers = new LinkedHashMap<String, String>();
+            headers.put(HEADER_EVENT_ID, n.eventId());
+            headers.put(HEADER_EVENT_TYPE, n.eventType());
+            headers.put(HEADER_TIMESTAMP, Long.toString(timestamp));
+            headers.put(HEADER_SIGNATURE, WebhookSignature.sign(webhook.get().secret(), timestamp, n.payload()));
             guard.ensureAllowed(url);
             status = sender.send(url, headers, n.payload());
         } catch (InvalidValueException ex) {
@@ -109,6 +122,15 @@ class TenantNotificationService implements TenantNotifications, DispatchNotifica
             return;
         } catch (WebhookSendException ex) {
             fail(n, attempt, null, ex.errorCode());
+            return;
+        } catch (RuntimeException ex) {
+            // Nada foi entregue: conta como tentativa e reagenda, em vez de prender o item em IN_FLIGHT.
+            log.atError()
+                    .addKeyValue("tenant.id", n.tenantId())
+                    .addKeyValue("notification.id", n.eventId())
+                    .setCause(ex)
+                    .log("Erro inesperado ao enviar notificação");
+            fail(n, attempt, null, "UNEXPECTED_ERROR");
             return;
         }
 

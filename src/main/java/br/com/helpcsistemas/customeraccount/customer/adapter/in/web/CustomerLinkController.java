@@ -1,7 +1,9 @@
 package br.com.helpcsistemas.customeraccount.customer.adapter.in.web;
 
+import br.com.helpcsistemas.customeraccount.customer.CustomerDirectory;
 import br.com.helpcsistemas.customeraccount.customer.application.service.CustomerLinkService;
 import br.com.helpcsistemas.customeraccount.customer.domain.event.CustomerLinkRequested;
+import br.com.helpcsistemas.customeraccount.shared.domain.ResourceNotFoundException;
 import br.com.helpcsistemas.customeraccount.shared.domain.TenantId;
 import java.util.List;
 import java.util.UUID;
@@ -17,9 +19,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 class CustomerLinkController {
     private final CustomerLinkService links;
+    private final CustomerDirectory customers;
 
-    CustomerLinkController(CustomerLinkService links) {
+    CustomerLinkController(CustomerLinkService links, CustomerDirectory customers) {
         this.links = links;
+        this.customers = customers;
     }
 
     @DeleteMapping("/api/v1/customers/{id}/link")
@@ -56,12 +60,16 @@ class CustomerLinkController {
         return ResponseEntity.accepted().build();
     }
 
-    private static UUID holder(Jwt jwt) {
+    private UUID holder(Jwt jwt) {
         var claim = jwt.getClaimAsString("customer_id");
         if (claim == null
                 || !claim.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")) {
             throw new org.springframework.security.access.AccessDeniedException("Titular não vinculado");
         }
-        return UUID.fromString(claim);
+        var id = UUID.fromString(claim);
+        if (!customers.isBoundSubject(jwt.getSubject(), id)) {
+            throw new ResourceNotFoundException("CUSTOMER_NOT_FOUND", "Cliente não encontrado");
+        }
+        return id;
     }
 }
