@@ -20,8 +20,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.FindAndReplaceOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -86,9 +88,28 @@ class MongoVerificationViewRepository implements VerificationViewRepositoryPort 
                 .toList();
     }
 
+    /**
+     * Substituição condicionada à versão do processo: com várias instâncias, um estado lido antes de outra instância
+     * gravar um mais novo não o sobrescreve (o filtro falha e o upsert esbarra na chave duplicada, que é ignorada).
+     * Substitui o documento inteiro para que campos que voltaram a nulo (ex.: link após a conclusão) não fiquem velhos.
+     */
     @Override
     public void save(VerificationView view) {
-        mongo.save(VerificationDocument.from(view, cipher), COLLECTION);
+        var document = VerificationDocument.from(view, cipher);
+        try {
+            mongo.findAndReplace(
+                    Query.query(Criteria.where("_id")
+                            .is(document.id())
+                            .and("version")
+                            .lt(document.version())),
+                    document,
+                    FindAndReplaceOptions.options().upsert(),
+                    COLLECTION);
+        } catch (DuplicateKeyException ex) {
+            log.atDebug()
+                    .addKeyValue("verification.id", document.id())
+                    .log("Read model de validação já está em versão igual ou mais nova");
+        }
     }
 
     @Override
