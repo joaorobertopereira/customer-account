@@ -157,6 +157,48 @@ class CustomerFlowIntegrationTests extends IntegrationTestSupport {
     }
 
     @Test
+    void idempotencyKeyDoesNotFreezeConflictsAndIsScopedByRoute() throws Exception {
+        var body = registrationBody("71428793860");
+        var created = mvc.perform(post("/api/v1/customers")
+                        .with(tenant("tenant-idempotency-2", "customer:read", "customer:write"))
+                        .header("Idempotency-Key", "shared-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse();
+        var customerId = com.jayway.jsonpath.JsonPath.<String>read(created.getContentAsString(), "$.id");
+
+        // A mesma chave, com o mesmo corpo, em outra rota executa a outra operação em vez de reproduzir o 201.
+        var otherRoute = mvc.perform(post("/api/v1/customers/search")
+                        .with(tenant("tenant-idempotency-2", "customer:read", "customer:write"))
+                        .header("Idempotency-Key", "shared-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andReturn()
+                .getResponse();
+        assertThat(otherRoute.getStatus()).isNotEqualTo(201);
+        assertThat(otherRoute.getHeader("Location")).isNull();
+
+        // 409 não é resultado definitivo: a chave é liberada em vez de congelar o conflito até o TTL.
+        mvc.perform(post("/api/v1/customers")
+                        .with(tenant("tenant-idempotency-2", "customer:write"))
+                        .header("Idempotency-Key", "retry-after-conflict")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isConflict());
+        mvc.perform(delete("/api/v1/customers/{id}", customerId).with(tenant("tenant-idempotency-2", "customer:erase")))
+                .andExpect(status().isAccepted());
+        await().atMost(EVENTUAL)
+                .untilAsserted(() -> mvc.perform(post("/api/v1/customers")
+                                .with(tenant("tenant-idempotency-2", "customer:write"))
+                                .header("Idempotency-Key", "retry-after-conflict")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body))
+                        .andExpect(status().isCreated()));
+    }
+
+    @Test
     void returnsProblemDetailsWithoutEchoingPersonalData() throws Exception {
         mvc.perform(post("/api/v1/customers")
                         .with(tenant("tenant-a", "customer:write"))
