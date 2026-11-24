@@ -25,6 +25,10 @@ class ConsentFlowIntegrationTests extends IntegrationTestSupport {
     void pendingApprovalMinimizationRevocationAndUnlinkNeverLeakData() throws Exception {
         var id = register(tenant(ORIGIN, "customer:write"), CPF);
         var holder = holder(ORIGIN, id);
+        // Só o claim customer_id não basta: sem o vínculo gravado na confirmação, /me não reconhece o titular.
+        mvc.perform(get("/api/v1/me/links/requests").with(holder)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/me/consents/{tenant}", ORIGIN).with(holder)).andExpect(status().isNotFound());
+        mongo.insert(new Document("_id", "phase4-holder").append("customerId", id), "subject_customer_bindings");
         putPurpose(ORIGIN, "identity", "CONTRACT", "[\"cpf\",\"personalData.fullName\"]");
         putPurpose(NEW_TENANT, "contact", "CONSENT", "[\"email\"]");
 

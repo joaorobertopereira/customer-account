@@ -67,6 +67,10 @@ class SubjectConsentController {
             throw new org.springframework.security.access.AccessDeniedException("Titular não vinculado");
         }
         var id = UUID.fromString(value);
+        if (!customers.isBoundSubject(jwt.getSubject(), id)) {
+            throw new br.com.helpcsistemas.customeraccount.shared.domain.ResourceNotFoundException(
+                    "CUSTOMER_NOT_FOUND", "Cliente não encontrado");
+        }
         customers
                 .findLinkedCustomer(tenant, id)
                 .orElseThrow(() -> new br.com.helpcsistemas.customeraccount.shared.domain.ResourceNotFoundException(

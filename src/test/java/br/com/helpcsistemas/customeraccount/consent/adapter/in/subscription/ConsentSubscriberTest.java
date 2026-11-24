@@ -17,29 +17,38 @@ import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.json.JsonMapper;
 
 class ConsentSubscriberTest {
+
+    private final ConsentEventCodec codec = mock(ConsentEventCodec.class);
+    private final UUID id = UUID.randomUUID();
+    private final TenantId tenant = TenantId.of("tenant-a");
+    private final Instant now = Instant.parse("2026-01-15T12:00:00Z");
+    private final StoredEvent stored = new StoredEvent(
+            "consent-" + id + "-tenant-a", 1, UUID.randomUUID(), "ConsentRevoked.v1", new byte[0], Map.of(), now);
+
     @Test
-    void revokedEventRemovesStaleProjectionAndQueuesDeterministicWebhook() {
-        var codec = mock(ConsentEventCodec.class);
+    void revokedEventRemovesStaleProjectionWithoutExternalEffects() {
         var ledgers = mock(ConsentRepository.class);
         var views = mock(ConsentProjection.class);
         var customers = mock(CustomerDirectory.class);
-        var notifications = mock(TenantNotifications.class);
-        var subscriber = new ConsentSubscriber(
-                codec,
-                ledgers,
-                views,
-                customers,
-                notifications,
-                JsonMapper.builder().build());
-        var id = UUID.randomUUID();
-        var tenant = TenantId.of("tenant-a");
-        var now = Instant.parse("2026-01-15T12:00:00Z");
-        var stored = new StoredEvent(
-                "consent-" + id + "-tenant-a", 1, UUID.randomUUID(), "ConsentRevoked.v1", new byte[0], Map.of(), now);
+        var subscriber = new ConsentSubscriber(codec, ledgers, views, customers);
         when(codec.decode(stored)).thenReturn(new ConsentRevoked(id, tenant, "marketing", "private reason", now));
+
         subscriber.onEvent(stored);
+
         verify(views).remove(id, tenant);
         verifyNoInteractions(ledgers);
+        assertThat(subscriber.rebuildable()).isTrue();
+    }
+
+    @Test
+    void notifierQueuesDeterministicWebhookAndIsNotRebuildable() {
+        var notifications = mock(TenantNotifications.class);
+        var notifier = new ConsentRevocationNotifier(
+                codec, notifications, JsonMapper.builder().build());
+        when(codec.decode(stored)).thenReturn(new ConsentRevoked(id, tenant, "marketing", "private reason", now));
+
+        notifier.onEvent(stored);
+
         var capture = ArgumentCaptor.forClass(TenantNotification.class);
         verify(notifications).enqueue(capture.capture());
         var event = capture.getValue();
@@ -47,5 +56,20 @@ class ConsentSubscriberTest {
         assertThat(event.tenantId()).isEqualTo(tenant);
         assertThat(event.eventId()).isEqualTo(stored.stream() + ":1");
         assertThat(event.payloadJson()).contains("\"purpose\":\"marketing\"").doesNotContain("private reason");
+        assertThat(notifier.rebuildable()).isFalse();
+        assertThat(notifier.inheritsCheckpointFrom()).contains(ConsentSubscriber.NAME);
+    }
+
+    @Test
+    void notifierIgnoresOtherConsentEvents() {
+        var notifications = mock(TenantNotifications.class);
+        var notifier = new ConsentRevocationNotifier(
+                codec, notifications, JsonMapper.builder().build());
+        var granted = new StoredEvent(
+                "consent-" + id + "-tenant-a", 0, UUID.randomUUID(), "ConsentGranted.v1", new byte[0], Map.of(), now);
+
+        notifier.onEvent(granted);
+
+        verifyNoInteractions(codec, notifications);
     }
 }

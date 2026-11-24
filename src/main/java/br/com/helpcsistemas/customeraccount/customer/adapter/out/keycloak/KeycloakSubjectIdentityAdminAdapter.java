@@ -10,6 +10,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -21,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Component
 class KeycloakSubjectIdentityAdminAdapter implements SubjectIdentityAdminPort {
 
+    private static final Logger log = LoggerFactory.getLogger(KeycloakSubjectIdentityAdminAdapter.class);
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
             new ParameterizedTypeReference<>() {};
 
@@ -38,11 +41,7 @@ class KeycloakSubjectIdentityAdminAdapter implements SubjectIdentityAdminPort {
     public void setCustomerId(String subject, String verifiedEmail, UUID customerId) {
         var token = serviceAccountToken();
         var basePath = "/admin/realms/" + properties.realm() + "/users/" + subject;
-        var user = rest.get()
-                .uri(properties.baseUrl() + basePath)
-                .headers(headers -> headers.setBearerAuth(token))
-                .retrieve()
-                .body(MAP_TYPE);
+        var user = fetchUser(basePath, token);
         if (user == null
                 || !Boolean.TRUE.equals(user.get("emailVerified"))
                 || !sameEmail(user.get("email"), verifiedEmail)) {
@@ -65,6 +64,27 @@ class KeycloakSubjectIdentityAdminAdapter implements SubjectIdentityAdminPort {
                 .body(user)
                 .retrieve()
                 .toBodilessEntity();
+        // O Keycloak 24+ responde 2xx e descarta em silêncio atributos fora do user profile do realm.
+        var persisted = fetchUser(basePath, token);
+        if (persisted == null
+                || !customerId
+                        .toString()
+                        .equals(attributeValue(
+                                mutableMap(persisted.get("attributes")).get("customer_id")))) {
+            log.atError()
+                    .addKeyValue("keycloak.realm", properties.realm())
+                    .log("Keycloak não persistiu o atributo customer_id; declare-o no user profile do realm");
+            throw new ResponseStatusException(
+                    SERVICE_UNAVAILABLE, "Não foi possível vincular a identidade ao cadastro");
+        }
+    }
+
+    private Map<String, Object> fetchUser(String basePath, String token) {
+        return rest.get()
+                .uri(properties.baseUrl() + basePath)
+                .headers(headers -> headers.setBearerAuth(token))
+                .retrieve()
+                .body(MAP_TYPE);
     }
 
     private String serviceAccountToken() {

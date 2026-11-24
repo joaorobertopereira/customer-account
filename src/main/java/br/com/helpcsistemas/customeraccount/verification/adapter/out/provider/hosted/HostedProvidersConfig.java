@@ -18,7 +18,7 @@ import tools.jackson.databind.json.JsonMapper;
 class HostedProvidersConfig {
 
     @Bean
-    @ConditionalOnProperty(name = "app.verification.hosted-providers.legitimuz.enabled", havingValue = "true")
+    @ConditionalOnProperty(name = "app.verification.hosted-providers.providers.legitimuz.enabled", havingValue = "true")
     HostedCallbackProvider legitimuzHostedProvider(
             RestClient.Builder builder,
             ProviderCredentialsResolver credentials,
@@ -29,7 +29,7 @@ class HostedProvidersConfig {
     }
 
     @Bean
-    @ConditionalOnProperty(name = "app.verification.hosted-providers.netrin.enabled", havingValue = "true")
+    @ConditionalOnProperty(name = "app.verification.hosted-providers.providers.netrin.enabled", havingValue = "true")
     HostedCallbackProvider netrinHostedProvider(
             RestClient.Builder builder,
             ProviderCredentialsResolver credentials,
@@ -47,6 +47,9 @@ class HostedProvidersConfig {
             Clock clock,
             HostedProvidersProperties properties) {
         Provider settings = properties.providers().get(id);
+        if (settings == null) {
+            throw new IllegalStateException("Configuração ausente: app.verification.hosted-providers.providers." + id);
+        }
         return new GenericHostedProvider(
                 ProviderId.of(id),
                 settings,

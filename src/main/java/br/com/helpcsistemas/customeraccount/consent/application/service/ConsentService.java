@@ -65,7 +65,10 @@ public class ConsentService {
     public void revoke(TenantId tenant, UUID customer, String purpose, String reason) {
         customers.findLinkedCustomer(tenant, customer).orElseThrow(ConsentService::notFound);
         var ledger = ledgers.load(customer, tenant);
-        ledger.revoke(purpose, reason, clock);
+        if (!ledger.revoke(purpose, reason, clock)) {
+            // Idempotente: nada a revogar, nada a gravar nem auditar.
+            return;
+        }
         ledgers.save(ledger);
         audit(tenant, customer, "consent.revoked");
     }

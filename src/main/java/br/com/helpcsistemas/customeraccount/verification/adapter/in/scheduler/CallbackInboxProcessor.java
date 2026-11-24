@@ -12,6 +12,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -19,8 +20,8 @@ import org.springframework.stereotype.Component;
 class CallbackInboxProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(CallbackInboxProcessor.class);
-    static final int BATCH_SIZE = 50;
 
+    private final int batchSize;
     private final ProviderCallbackInboxPort inbox;
     private final Map<
                     br.com.helpcsistemas.customeraccount.verification.domain.model.ProviderId,
@@ -33,7 +34,12 @@ class CallbackInboxProcessor {
             ProviderCallbackInboxPort inbox,
             List<HostedProviderCallbackPort> providers,
             ReceiveProviderResultUseCase results,
-            Clock clock) {
+            Clock clock,
+            @Value("${app.verification.callback-inbox.batch-size:50}") int batchSize) {
+        if (batchSize < 1) {
+            throw new IllegalArgumentException("app.verification.callback-inbox.batch-size deve ser >= 1");
+        }
+        this.batchSize = batchSize;
         this.inbox = inbox;
         this.providers =
                 providers.stream().collect(Collectors.toMap(HostedProviderCallbackPort::id, Function.identity()));
@@ -43,7 +49,7 @@ class CallbackInboxProcessor {
 
     @Scheduled(fixedDelayString = "${app.verification.callback-inbox.interval:2s}")
     public int processDue() {
-        var callbacks = inbox.claimDue(clock.instant(), BATCH_SIZE);
+        var callbacks = inbox.claimDue(clock.instant(), batchSize);
         callbacks.forEach(callback -> {
             var provider = providers.get(callback.provider());
             if (provider == null) {
