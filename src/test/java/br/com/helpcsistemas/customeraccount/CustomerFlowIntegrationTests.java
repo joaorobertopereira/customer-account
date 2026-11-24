@@ -158,7 +158,7 @@ class CustomerFlowIntegrationTests extends IntegrationTestSupport {
 
     @Test
     void idempotencyKeyDoesNotFreezeConflictsAndIsScopedByRoute() throws Exception {
-        var body = registrationBody("71428793860");
+        var body = registrationBody("28471936500");
         var created = mvc.perform(post("/api/v1/customers")
                         .with(tenant("tenant-idempotency-2", "customer:read", "customer:write"))
                         .header("Idempotency-Key", "shared-key")
